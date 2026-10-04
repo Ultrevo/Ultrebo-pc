@@ -105,6 +105,7 @@ anyone. They open their own macro's Rules tab and use **Share > Import rules fro
 - **Text rules** work on any screen. **Picture rules** match best when the other player has the same screen size and game window size, so they may
   need to pick a picture again.
 - The search area isn't shared, because it belongs to one screen.
+- Rule packs from the phone version can't be used on a computer, and the other way round.
 - **Only import rule packs from people you trust, and check what each rule does:** rules click things on your screen.
 
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.

@@ -22,6 +22,7 @@ from .model import Macro, Step, StepType, WatchAction
 
 EXTENSION = ".ultrebo-rules"
 FORMAT = 1
+PLATFORM = "desktop"
 MAX_RULES = 100
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_JSON_BYTES = 512 * 1024
@@ -55,7 +56,7 @@ def export_pack(macro: Macro, templates_dir: Path, path: Path, name: str | None 
             images[member] = png
             data["image"] = member
         entries.append(data)
-    manifest = {"format": FORMAT, "app_version": __version__, "name": name or macro.name, "rules": entries}
+    manifest = {"format": FORMAT, "platform": PLATFORM, "app_version": __version__, "name": name or macro.name, "rules": entries}
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("rules.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         for member, png in images.items():
@@ -117,6 +118,9 @@ def read_pack(
             raise RulePackError("This file isn't a rule pack.") from e
         if not isinstance(manifest, dict) or not isinstance(manifest.get("rules"), list):
             raise RulePackError("This file isn't a rule pack.")
+        platform = manifest.get("platform")
+        if platform not in (None, "", PLATFORM):
+            raise RulePackError("This rule pack was made for the phone version of Ultrebo, so it can't be used on a computer.")
         if manifest.get("format") != FORMAT:
             raise RulePackError("This rule pack was made by a newer version of Ultrebo. Update Ultrebo and try again.")
         raw = manifest["rules"]

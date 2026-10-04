@@ -149,3 +149,19 @@ def test_hostile_numbers_and_fields_are_cleaned(other, tmp_path):
     assert (r.threshold, r.delay_after_ms, r.hold_ms, r.clicks, r.button, r.repeat) == (1.0, 0, 5000, 1, "left", 1)
     assert r.enabled is False and r.on_seen is WatchAction.CONTINUE and r.watch is True
     assert r.id != "steal-this" and r.template_file is None and r.region is None and len(r.name) == 80
+
+
+def test_a_pack_made_on_a_phone_is_explained(other, tmp_path):
+    path = make_pack(tmp_path / "p.zip", {"format": 1, "platform": "android", "rules": [text_rule()]})
+    with pytest.raises(RulePackError, match="phone version"):
+        read(path, other)
+    # packs without a platform (older ones) and desktop packs are fine
+    assert read(make_pack(tmp_path / "q.zip", {"format": 1, "rules": [text_rule()]}), other)[1]
+    assert read(make_pack(tmp_path / "r.zip", {"format": 1, "platform": "desktop", "rules": [text_rule()]}), other)[1]
+
+
+def test_exported_packs_say_where_they_came_from(store, tmp_path):
+    path = tmp_path / "x.ultrebo-rules"
+    rulepack.export_pack(macro_with_rules(store), store.templates_dir, path)
+    with zipfile.ZipFile(path) as z:
+        assert json.loads(z.read("rules.json"))["platform"] == "desktop"
