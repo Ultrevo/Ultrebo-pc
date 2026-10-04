@@ -96,6 +96,17 @@ You can have as many rules as you like in one macro. **If two rules are on scree
 is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
 A macro with only rules just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
 
+#### Sharing rules with other players
+
+Set your rules up once, then share them: on the **Rules** tab click **Share > Export these rules to a file**. That makes one
+`.ultrebo-rules` file (with the pictures inside) in Ultrebo's **Rule packs** folder; **Share > Open the rule packs folder** shows it. Send it to
+anyone. They open their own macro's Rules tab and use **Share > Import rules from a file**, and the rules are added at the bottom of their list.
+
+- **Text rules** work on any screen. **Picture rules** match best when the other player has the same screen size and game window size, so they may
+  need to pick a picture again.
+- The search area isn't shared, because it belongs to one screen.
+- **Only import rule packs from people you trust, and check what each rule does:** rules click things on your screen.
+
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.
 
 ## Troubleshooting

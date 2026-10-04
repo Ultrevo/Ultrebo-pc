@@ -277,8 +277,9 @@ class RulesTab(QWidget):
         self.refresh(select_id=rules[0].id)
         QMessageBox.information(
             self, "Ultrebo",
-            f"Added {len(rules)} rule{'s' if len(rules) != 1 else ''} at the bottom of the list. Use Test on each one, "
-            "and pick any picture again that doesn't match on your screen.",
+            f"Added {len(rules)} rule{'s' if len(rules) != 1 else ''} at the bottom of the list. "
+            "Check what each rule does (they click things on your screen), use Test, "
+            "and pick any picture again that doesn't match.",
         )
 
     def open_packs_folder(self) -> None:
