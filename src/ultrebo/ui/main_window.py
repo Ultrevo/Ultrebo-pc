@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import shutil
+import threading
 import uuid
 import webbrowser
 
@@ -16,7 +17,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from .. import __version__, selfupdate
+from .. import __version__, selfupdate, updater
 from ..hotkeys import HotkeyManager
 from ..model import Macro, RunMode, Step, StepType
 from ..recorder import Recorder
@@ -40,6 +41,7 @@ class Bridge(QObject):
     toggle_run = Signal()
     toggle_record = Signal()
     update_found = Signal(object)
+    update_result = Signal(object)  # the answer to "Check for updates" in About
 
 
 class MainWindow(QMainWindow):
@@ -77,6 +79,7 @@ class MainWindow(QMainWindow):
         bridge.toggle_run.connect(self.toggle_run)
         bridge.toggle_record.connect(self.toggle_record)
         bridge.update_found.connect(self._on_update)
+        bridge.update_result.connect(self._on_update_result)
 
         self._reload_macros()
         self._apply_hotkeys()
@@ -106,7 +109,7 @@ class MainWindow(QMainWindow):
         settings = QPushButton("Settings")
         settings.clicked.connect(self.open_settings)
         about = QPushButton("About")
-        about.clicked.connect(lambda: AboutDialog(self).exec())
+        about.clicked.connect(lambda: AboutDialog(self, on_check=self.check_for_updates_now).exec())
         row2.addWidget(settings)
         row2.addWidget(about)
         v.addLayout(row2)
@@ -620,6 +623,28 @@ class MainWindow(QMainWindow):
             f"The macro stopped because of an error:\n\n{message}\n\n"
             "On a Mac, check that Accessibility is switched on for Ultrebo in System Settings.",
         )
+
+    def check_for_updates_now(self) -> None:
+        """About > Check for updates: unlike the automatic check on launch, this one says what happened."""
+        self.status_label.setText("Checking for updates...")
+
+        def look() -> None:
+            self.bridge.update_result.emit(updater.check_detailed(__version__))
+
+        threading.Thread(target=look, daemon=True, name="ultrebo-update-check-now").start()
+
+    def _on_update_result(self, result) -> None:
+        self.status_label.setText("Ready")
+        if result.error:
+            QMessageBox.warning(
+                self, "Ultrebo",
+                f"Ultrebo couldn't check for updates:\n\n{result.error}\n\n"
+                "You can look for a new version on the release page instead.",
+            )
+        elif result.update is not None:
+            self._on_update(result.update)
+        else:
+            QMessageBox.information(self, "Ultrebo", f"You have the latest version ({__version__}).")
 
     def _on_update(self, update: Update) -> None:
         box = QMessageBox(self)

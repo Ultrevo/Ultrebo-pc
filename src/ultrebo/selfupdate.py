@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .updater import Asset, Update
+from .updater import Asset, Update, ssl_context
 
 WINDOWS_EXE = "Ultrebo.exe"
 MAC_APP = "Ultrebo.app"
@@ -81,7 +81,7 @@ def download(
     digest = hashlib.sha256()
     done = 0
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response, open(dest, "wb") as out:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response, open(dest, "wb") as out:
             while True:
                 if cancelled is not None and cancelled():
                     raise UpdateError("The update was cancelled.")

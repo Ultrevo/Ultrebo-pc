@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import platform
 import re
+import ssl
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -17,6 +18,25 @@ API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 PAGE_PREFIX = "https://github.com/"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 MAX_DOWNLOAD_BYTES = 600 * 1024 * 1024
+
+
+def ssl_context() -> ssl.SSLContext:
+    """TLS settings that also work in the packaged app (a Mac build has no system certificates of its own)."""
+    context = ssl.create_default_context()  # the computer's own certificates (also covers antivirus and proxies)
+    try:
+        import certifi
+
+        context.load_verify_locations(cafile=certifi.where())  # plus a standard set, for builds that have none
+    except Exception:  # noqa: BLE001
+        pass
+    return context
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    update: "Update | None"
+    latest: str | None = None  # the newest release found, e.g. "0.1.2"
+    error: str | None = None  # why the check failed, when it did
 
 
 @dataclass(frozen=True)
@@ -80,15 +100,25 @@ def parse_release(body: str, current_version: str, target: str | None = None) ->
     return Update(tag.lstrip("vV"), page, pick_asset(data.get("assets"), target))
 
 
-def check(current_version: str, timeout: float = 8.0) -> Update | None:
-    """The newer release, or None when up to date or anything goes wrong."""
+def check_detailed(current_version: str, timeout: float = 8.0) -> CheckResult:
+    """Asks GitHub for the latest release and says what it found, or why it couldn't."""
     try:
         request = urllib.request.Request(
             API_URL, headers={"Accept": "application/vnd.github+json", "User-Agent": "Ultrebo"}
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response:
             if response.status != 200:
-                return None
-            return parse_release(response.read().decode("utf-8"), current_version, platform_key())
-    except Exception:  # noqa: BLE001 - an update check must never get in the way
-        return None
+                return CheckResult(None, error=f"GitHub answered with status {response.status}")
+            body = response.read().decode("utf-8")
+    except Exception as e:  # noqa: BLE001 - an update check must never get in the way
+        return CheckResult(None, error=f"{type(e).__name__}: {e}")
+    try:
+        latest = str(json.loads(body)["tag_name"]).lstrip("vV")
+    except (ValueError, KeyError, TypeError):
+        return CheckResult(None, error="GitHub's reply was not what Ultrebo expected")
+    return CheckResult(parse_release(body, current_version, platform_key()), latest=latest)
+
+
+def check(current_version: str, timeout: float = 8.0) -> Update | None:
+    """The newer release, or None when up to date or anything goes wrong."""
+    return check_detailed(current_version, timeout).update

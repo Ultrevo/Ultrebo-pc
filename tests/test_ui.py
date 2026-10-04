@@ -404,3 +404,20 @@ def test_update_is_refused_while_a_macro_runs(window, monkeypatch):
     monkeypatch.setattr(selfupdate, "prepare", lambda *a: pytest.fail("must not start"))
     window._start_self_update(Update("0.2.0", "u"))
     assert "Stop the macro first" in messages[-1]
+
+
+def test_about_check_for_updates_tells_you_what_happened(window, monkeypatch):
+    from ultrebo import updater as upd
+
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: seen.append(("warn", a[2])))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: seen.append(("info", a[2])))
+    shown = []
+    monkeypatch.setattr(window, "_on_update", lambda update: shown.append(update.version))
+
+    window._on_update_result(upd.CheckResult(None, error="SSLError: certificate verify failed"))
+    assert seen[-1][0] == "warn" and "certificate verify failed" in seen[-1][1]
+    window._on_update_result(upd.CheckResult(None, latest="0.1.0"))
+    assert seen[-1][0] == "info" and "latest version" in seen[-1][1]
+    window._on_update_result(upd.CheckResult(upd.Update("0.9.0", "https://github.com/x"), "0.9.0"))
+    assert shown == ["0.9.0"]

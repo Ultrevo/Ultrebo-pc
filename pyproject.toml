@@ -16,6 +16,7 @@ dependencies = [
     "pynput>=1.7.6",
     "PySide6-Essentials>=6.6",
     "Pillow>=10",
+    "certifi",
     "rapidocr-onnxruntime>=1.3",
 ]
 

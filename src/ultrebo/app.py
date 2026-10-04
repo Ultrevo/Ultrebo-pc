@@ -88,7 +88,47 @@ def _selftest(say) -> int:
     return 0 if (text_ok and image_ok and drawn > 500) else 1
 
 
+def check_update_cli(report: Path | None) -> int:
+    """`Ultrebo --check-update [report-file]`: asks GitHub for the newest release the way the app does, so the build
+    can prove the packaged app can reach GitHub and pick the right download. Pretends to be an ancient version."""
+    def say(text: str) -> None:
+        print(text)
+        if report is not None:
+            with open(report, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+
+    result = updater.check_detailed("0.0.1")
+    if result.error:
+        say(f"check-update: FAILED {result.error}")
+        return 1
+    if result.update is None:
+        say(f"check-update: FAILED newest release {result.latest} was not seen as newer than 0.0.1")
+        return 1
+    expects_download = updater.platform_key() is not None
+    if expects_download and result.update.asset is None:
+        say(f"check-update: FAILED found {result.update.version} but no download for {updater.platform_key()}")
+        return 1
+    asset = result.update.asset.name if result.update.asset else "none"
+    say(f"check-update: ok latest={result.latest} download={asset}")
+    return 0
+
+
+def _log_update_check(result) -> None:
+    """Keep the last automatic check in a small file, so a silent failure can be looked at afterwards."""
+    try:
+        import time
+
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')}  you have {__version__}  newest {result.latest}  "
+        line += f"error: {result.error}" if result.error else ("update available" if result.update else "up to date")
+        (data_dir() / "update-check.log").write_text(line + "\n", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main() -> int:
+    if "--check-update" in sys.argv:
+        rest = sys.argv[sys.argv.index("--check-update") + 1:]
+        return check_update_cli(Path(rest[0]) if rest else None)
     if "--selftest" in sys.argv:
         rest = sys.argv[sys.argv.index("--selftest") + 1:]
         return selftest(Path(rest[0]) if rest else None)
@@ -121,9 +161,10 @@ def main() -> int:
 
     if store.settings.check_updates:
         def look() -> None:
-            update = updater.check(__version__)
-            if update is not None:
-                bridge.update_found.emit(update)
+            result = updater.check_detailed(__version__)
+            _log_update_check(result)
+            if result.update is not None:
+                bridge.update_found.emit(result.update)
 
         threading.Thread(target=look, daemon=True, name="ultrebo-update-check").start()
 

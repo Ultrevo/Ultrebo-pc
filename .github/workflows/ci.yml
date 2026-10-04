@@ -75,6 +75,17 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: dist/Ultrebo.app/Contents/MacOS/Ultrebo --selftest
+      - name: Update-check test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "checkupdate.txt"
+          $p = Start-Process -FilePath dist/Ultrebo/Ultrebo.exe -ArgumentList "--check-update", $report -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report }
+          if ($p.ExitCode -ne 0) { throw "The packaged app could not check for updates (exit code $($p.ExitCode))" }
+      - name: Update-check test (macOS)
+        if: runner.os == 'macOS'
+        run: dist/Ultrebo.app/Contents/MacOS/Ultrebo --check-update "$RUNNER_TEMP/checkupdate.txt"
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

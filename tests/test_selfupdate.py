@@ -228,3 +228,58 @@ def test_windows_helper_copies_the_new_files_over_and_reopens(tmp_path):
     assert (target / "added.txt").exists() and (target / "keep.txt").read_text() == "new version"
     assert (target / "old.txt").exists()  # files are copied over the old ones, nothing is deleted
     assert not staging.exists()
+
+
+# ------------------------------------------------------------------ the update check explains itself
+
+def test_check_detailed_reports_what_it_found_or_why_it_failed(monkeypatch):
+    class Reply:
+        status = 200
+
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body.encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    body = release([asset_json()])
+    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: Reply(body))
+    monkeypatch.setattr(updater, "platform_key", lambda: "windows-x64")
+    result = updater.check_detailed("0.1.0")
+    assert result.error is None and result.latest == "0.2.0" and result.update.version == "0.2.0"
+    assert updater.check_detailed("0.2.0").update is None and updater.check_detailed("0.2.0").latest == "0.2.0"
+    assert updater.check("0.1.0").version == "0.2.0"
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: Reply("not json"))
+    assert "not what Ultrebo expected" in updater.check_detailed("0.1.0").error
+
+    def boom(*a, **k):
+        raise OSError("certificate verify failed")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", boom)
+    result = updater.check_detailed("0.1.0")
+    assert result.update is None and "certificate verify failed" in result.error
+    assert updater.check("0.1.0") is None  # the quiet version still never raises
+
+
+def test_check_update_command_line_reports_ok_and_failures(monkeypatch, tmp_path, capsys):
+    from ultrebo import app
+
+    fine = updater.CheckResult(Update("0.2.0", "https://github.com/x", Asset("a.zip", PREFIX + "a.zip", "a" * 64, 5)), "0.2.0")
+    monkeypatch.setattr(updater, "check_detailed", lambda v: fine)
+    monkeypatch.setattr(updater, "platform_key", lambda: "windows-x64")
+    report = tmp_path / "r.txt"
+    assert app.check_update_cli(report) == 0 and "ok latest=0.2.0 download=a.zip" in report.read_text()
+
+    monkeypatch.setattr(updater, "check_detailed", lambda v: updater.CheckResult(None, error="OSError: no route"))
+    assert app.check_update_cli(None) == 1 and "FAILED OSError: no route" in capsys.readouterr().out
+
+    no_download = updater.CheckResult(Update("0.2.0", "https://github.com/x"), "0.2.0")
+    monkeypatch.setattr(updater, "check_detailed", lambda v: no_download)
+    assert app.check_update_cli(None) == 1 and "no download for windows-x64" in capsys.readouterr().out

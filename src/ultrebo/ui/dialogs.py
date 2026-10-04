@@ -25,7 +25,7 @@ def _label(text: str, muted: bool = False) -> QLabel:
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, on_check=None):
         super().__init__(parent)
         self.setWindowTitle("About Ultrebo")
         self.setMinimumWidth(480)
@@ -56,6 +56,10 @@ class AboutDialog(QDialog):
         address = QLineEdit(DONATE_ETH)
         address.setReadOnly(True)
         v.addWidget(address)
+        if on_check is not None:
+            check = QPushButton("Check for updates now")
+            check.clicked.connect(lambda: (self.accept(), on_check()))
+            v.addWidget(check)
         row = QHBoxLayout()
         copy = QPushButton("Copy ETH address")
         copy.clicked.connect(lambda: (QApplication.clipboard().setText(DONATE_ETH), copy.setText("Copied")))
