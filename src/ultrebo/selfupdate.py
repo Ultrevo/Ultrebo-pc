@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .updater import Asset, Update, ssl_context
+from .updater import MAX_DOWNLOAD_BYTES, Asset, Update, ssl_context
 
 WINDOWS_EXE = "Ultrebo.exe"
 MAC_APP = "Ultrebo.app"
@@ -82,6 +82,8 @@ def download(
     done = 0
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response, open(dest, "wb") as out:
+            limit = asset.size or MAX_DOWNLOAD_BYTES
+            total = asset.size or int(response.headers.get("Content-Length") or 0)
             while True:
                 if cancelled is not None and cancelled():
                     raise UpdateError("The update was cancelled.")
@@ -89,17 +91,17 @@ def download(
                 if not chunk:
                     break
                 done += len(chunk)
-                if done > asset.size:
+                if done > limit:
                     raise UpdateError("The downloaded file is larger than expected, so it was thrown away.")
                 digest.update(chunk)
                 out.write(chunk)
                 if progress is not None:
-                    progress(done, asset.size)
+                    progress(done, total or done)
     except UpdateError:
         raise
     except Exception as e:  # noqa: BLE001
         raise UpdateError(f"The download failed: {e}") from e
-    if done != asset.size or digest.hexdigest() != asset.sha256:
+    if (asset.size and done != asset.size) or digest.hexdigest() != asset.sha256:
         raise UpdateError("The downloaded file didn't match its checksum, so it was thrown away. Please try again.")
 
 

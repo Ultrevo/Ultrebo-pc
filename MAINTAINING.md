@@ -43,5 +43,7 @@ Every push also builds Windows and macOS test builds on GitHub: open the run und
 On GitHub, **Releases > Draft a new release**, create a tag such as `v0.1.0`, **Publish**. The *Release builds* workflow
 runs the tests, builds the Windows and macOS apps and attaches them to that release. The tag becomes the version.
 
+Each zip is attached together with a `.sha256` checksum file; the app uses it to verify the download for **Update now**, so don't delete those files from a release. The app finds the newest release through `github.com/<repo>/releases/latest` (a web address) rather than the GitHub API, because the API refuses with "rate limit exceeded" when many people share an internet connection.
+
 The builds are unsigned. For fewer warnings, sign the Windows build (for example with [SignPath](https://signpath.org/),
 free for open source) and notarise the Mac build with an Apple Developer ID.

@@ -232,7 +232,89 @@ def test_windows_helper_copies_the_new_files_over_and_reopens(tmp_path):
 
 # ------------------------------------------------------------------ the update check explains itself
 
-def test_check_detailed_reports_what_it_found_or_why_it_failed(monkeypatch):
+import email.message
+import urllib.error
+
+
+def redirect_to(location, code=302):
+    headers = email.message.Message()
+    if location:
+        headers["Location"] = location
+
+    class Opener:
+        def open(self, request, timeout=None):
+            raise urllib.error.HTTPError(request.full_url, code, "x", headers, None)
+
+    return Opener()
+
+
+def test_latest_tag_is_read_from_the_web_address_without_using_the_api(monkeypatch):
+    tag_url = "https://github.com/Ultrevo/Ultrebo-pc/releases/tag/"
+    for location, expected in ((tag_url + "v0.1.9", "v0.1.9"), (tag_url + "v1.2.3?x=1", "v1.2.3")):
+        monkeypatch.setattr(updater.urllib.request, "build_opener", lambda *a, loc=location: redirect_to(loc))
+        assert updater.latest_tag_from_web() == expected
+    for location, code in ((None, 404), (tag_url + "not-a-version", 302), ("https://evil.example/releases/tag/v9.9.9", 302), (tag_url + "v0.1.9", 500)):
+        monkeypatch.setattr(updater.urllib.request, "build_opener", lambda *a, loc=location, c=code: redirect_to(loc, c))
+        with pytest.raises(RuntimeError):  # not a version, an error status, or not this project's github.com address
+            updater.latest_tag_from_web()
+
+
+def test_checksum_file_formats(monkeypatch):
+    good = "a" * 64
+    for text in (f"{good}  Ultrebo-v0.2.0-windows-x64.zip\n", f"{good.upper()} *file.zip", good):
+        monkeypatch.setattr(updater, "_get_text", lambda url, timeout, t=text: t)
+        asset = updater.asset_from_checksum_file("v0.2.0", "windows-x64")
+        assert asset.sha256 == good and asset.name == "Ultrebo-v0.2.0-windows-x64.zip"
+        assert asset.url == PREFIX + "v0.2.0/Ultrebo-v0.2.0-windows-x64.zip" and asset.size == 0
+    for text in ("", "not a checksum", "abc123"):
+        monkeypatch.setattr(updater, "_get_text", lambda url, timeout, t=text: t)
+        assert updater.asset_from_checksum_file("v0.2.0", "windows-x64") is None
+
+    def missing(url, timeout):
+        raise OSError("404")
+
+    monkeypatch.setattr(updater, "_get_text", missing)
+    assert updater.asset_from_checksum_file("v0.2.0", "windows-x64") is None
+
+
+def test_check_prefers_the_web_address_and_falls_back_to_the_api(monkeypatch):
+    monkeypatch.setattr(updater, "platform_key", lambda: "windows-x64")
+    api_calls = []
+    api_update = Update("0.2.0", "https://github.com/x", Asset("a.zip", PREFIX + "a.zip", "b" * 64, 9))
+    monkeypatch.setattr(updater, "_check_with_api", lambda v, t: api_calls.append(v) or updater.CheckResult(api_update, "0.2.0"))
+
+    # web address works, release is newer, checksum file exists: the API is never touched
+    monkeypatch.setattr(updater, "latest_tag_from_web", lambda timeout=8.0: "v0.2.0")
+    monkeypatch.setattr(updater, "asset_from_checksum_file", lambda tag, target, timeout=8.0: Asset("n.zip", PREFIX + "n.zip", "c" * 64))
+    result = updater.check_detailed("0.1.0")
+    assert result.update.version == "0.2.0" and result.update.asset.sha256 == "c" * 64 and api_calls == []
+    assert result.update.url == "https://github.com/Ultrevo/Ultrebo-pc/releases/tag/v0.2.0" and result.error is None
+
+    # already up to date: nothing else is asked
+    assert updater.check_detailed("0.2.0").update is None and updater.check_detailed("0.2.0").latest == "0.2.0"
+    assert api_calls == []
+
+    # an older release has no checksum file: the checksum comes from the API, if that works
+    monkeypatch.setattr(updater, "asset_from_checksum_file", lambda *a, **k: None)
+    assert updater.check_detailed("0.1.0").update.asset.sha256 == "b" * 64 and len(api_calls) == 1
+    monkeypatch.setattr(updater, "_check_with_api", lambda v, t: updater.CheckResult(None, error="HTTPError: HTTP Error 403: rate limit exceeded"))
+    result = updater.check_detailed("0.1.0")
+    assert result.update.version == "0.2.0" and result.update.asset is None  # still told, just not self-installed
+
+    # the web address fails: the API is the second way
+    def web_down(timeout=8.0):
+        raise RuntimeError("no route")
+
+    monkeypatch.setattr(updater, "latest_tag_from_web", web_down)
+    monkeypatch.setattr(updater, "_check_with_api", lambda v, t: updater.CheckResult(api_update, "0.2.0"))
+    assert updater.check_detailed("0.1.0").update is api_update
+    monkeypatch.setattr(updater, "_check_with_api", lambda v, t: updater.CheckResult(None, error="HTTPError: HTTP Error 403: rate limit exceeded"))
+    result = updater.check_detailed("0.1.0")
+    assert result.update is None and "rate limit exceeded" in result.error and "no route" in result.error
+    assert updater.check("0.1.0") is None  # the quiet version still never raises
+
+
+def test_the_api_fallback_explains_bad_replies(monkeypatch):
     class Reply:
         status = 200
 
@@ -248,24 +330,28 @@ def test_check_detailed_reports_what_it_found_or_why_it_failed(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    body = release([asset_json()])
-    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: Reply(body))
     monkeypatch.setattr(updater, "platform_key", lambda: "windows-x64")
-    result = updater.check_detailed("0.1.0")
-    assert result.error is None and result.latest == "0.2.0" and result.update.version == "0.2.0"
-    assert updater.check_detailed("0.2.0").update is None and updater.check_detailed("0.2.0").latest == "0.2.0"
-    assert updater.check("0.1.0").version == "0.2.0"
-
+    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: Reply(release([asset_json()])))
+    result = updater._check_with_api("0.1.0", 5)
+    assert result.update.version == "0.2.0" and result.update.asset is not None and result.latest == "0.2.0"
     monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: Reply("not json"))
-    assert "not what Ultrebo expected" in updater.check_detailed("0.1.0").error
+    assert "not what Ultrebo expected" in updater._check_with_api("0.1.0", 5).error
 
     def boom(*a, **k):
         raise OSError("certificate verify failed")
 
     monkeypatch.setattr(updater.urllib.request, "urlopen", boom)
-    result = updater.check_detailed("0.1.0")
-    assert result.update is None and "certificate verify failed" in result.error
-    assert updater.check("0.1.0") is None  # the quiet version still never raises
+    assert "certificate verify failed" in updater._check_with_api("0.1.0", 5).error
+
+
+def test_download_works_when_the_size_is_not_known(server, tmp_path):
+    good = make_asset(server, data=b"y" * 200_000, name="unknown.zip")
+    seen = []
+    selfupdate.download(Asset(good.name, good.url, good.sha256), tmp_path / "u.zip", lambda d, t: seen.append((d, t)))
+    assert (tmp_path / "u.zip").read_bytes() == b"y" * 200_000
+    assert seen[-1] == (200_000, 200_000)  # the total comes from the server's Content-Length
+    with pytest.raises(UpdateError, match="checksum"):
+        selfupdate.download(Asset(good.name, good.url, "0" * 64), tmp_path / "v.zip")
 
 
 def test_check_update_command_line_reports_ok_and_failures(monkeypatch, tmp_path, capsys):
@@ -273,13 +359,15 @@ def test_check_update_command_line_reports_ok_and_failures(monkeypatch, tmp_path
 
     fine = updater.CheckResult(Update("0.2.0", "https://github.com/x", Asset("a.zip", PREFIX + "a.zip", "a" * 64, 5)), "0.2.0")
     monkeypatch.setattr(updater, "check_detailed", lambda v: fine)
-    monkeypatch.setattr(updater, "platform_key", lambda: "windows-x64")
     report = tmp_path / "r.txt"
     assert app.check_update_cli(report) == 0 and "ok latest=0.2.0 download=a.zip" in report.read_text()
 
     monkeypatch.setattr(updater, "check_detailed", lambda v: updater.CheckResult(None, error="OSError: no route"))
     assert app.check_update_cli(None) == 1 and "FAILED OSError: no route" in capsys.readouterr().out
 
-    no_download = updater.CheckResult(Update("0.2.0", "https://github.com/x"), "0.2.0")
-    monkeypatch.setattr(updater, "check_detailed", lambda v: no_download)
-    assert app.check_update_cli(None) == 1 and "no download for windows-x64" in capsys.readouterr().out
+    older = updater.CheckResult(Update("0.2.0", "https://github.com/x"), "0.2.0")  # no checksum file yet: not a failure
+    monkeypatch.setattr(updater, "check_detailed", lambda v: older)
+    assert app.check_update_cli(None) == 0 and "download=none" in capsys.readouterr().out
+
+    monkeypatch.setattr(updater, "check_detailed", lambda v: updater.CheckResult(None, latest="0.0.1"))
+    assert app.check_update_cli(None) == 1 and "not seen as newer" in capsys.readouterr().out

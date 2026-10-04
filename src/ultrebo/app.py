@@ -104,10 +104,7 @@ def check_update_cli(report: Path | None) -> int:
     if result.update is None:
         say(f"check-update: FAILED newest release {result.latest} was not seen as newer than 0.0.1")
         return 1
-    expects_download = updater.platform_key() is not None
-    if expects_download and result.update.asset is None:
-        say(f"check-update: FAILED found {result.update.version} but no download for {updater.platform_key()}")
-        return 1
+    # Releases before v0.1.3 have no checksum file next to the zip, so a missing download is reported, not a failure.
     asset = result.update.asset.name if result.update.asset else "none"
     say(f"check-update: ok latest={result.latest} download={asset}")
     return 0
