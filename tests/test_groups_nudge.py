@@ -9,6 +9,7 @@ import time
 import cv2
 import numpy as np
 import pytest
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from conftest import FakeInput, FakeScreen, wait_until, with_pattern
@@ -189,6 +190,8 @@ def test_rule_dialog_offers_the_group_and_wiggle_choices(qapp, tmp_path):
     d._accept()
     s = d.result_step()
     assert s.group_id is None and s.nudge is False
+    d.deleteLater()  # a top-level dialog left for garbage collection can crash Qt at exit
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 def test_groups_dialog_adds_renames_and_deletes(qapp, monkeypatch):
@@ -211,6 +214,8 @@ def test_groups_dialog_adds_renames_and_deletes(qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     d._delete()
     assert macro.groups == [] and macro.rules[0].group_id is None
+    d.deleteLater()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 # ------------------------------------------------------------------ groups waking up on a restart

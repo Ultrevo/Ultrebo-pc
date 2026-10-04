@@ -76,6 +76,7 @@ def test_settings_dialog_saves_monitor(qapp):
     dialog.monitor_box.setCurrentIndex(1)
     dialog._save()
     assert settings.monitor == 2
+    dialog.deleteLater()
 
 
 def test_settings_dialog_without_monitors(qapp):
