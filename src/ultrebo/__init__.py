@@ -7,3 +7,4 @@ __version__ = "0.1.0"
 REPO = "Ultrevo/Ultrebo-pc"
 WEBSITE = "https://ultrevo.github.io/Ultrebo/"
 DISCORD = "https://discord.gg/mAKGfaAWWW"
+DONATE_ETH = "0x108484e1744Fd6ED22288411B9596390E76CD5b2"  # Ethereum network address for optional donations

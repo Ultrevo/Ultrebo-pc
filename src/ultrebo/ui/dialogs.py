@@ -6,11 +6,11 @@ from __future__ import annotations
 import webbrowser
 
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
 )
 
-from .. import DISCORD, REPO, WEBSITE, __version__
+from .. import DISCORD, DONATE_ETH, REPO, WEBSITE, __version__
 from ..inputs import validate_key_spec
 from ..store import Settings
 
@@ -48,7 +48,17 @@ class AboutDialog(QDialog):
             "Responsible use: many games forbid automation in their terms of service and may suspend accounts "
             "that use it. You are responsible for how you use this app.", muted=True,
         ))
+        v.addWidget(_label(
+            "Ultrebo is free. If it helps you, you can optionally support it with crypto on the Ethereum network "
+            "(ETH, or USDT/USDC on Ethereum):", muted=True,
+        ))
+        address = QLineEdit(DONATE_ETH)
+        address.setReadOnly(True)
+        v.addWidget(address)
         row = QHBoxLayout()
+        copy = QPushButton("Copy ETH address")
+        copy.clicked.connect(lambda: (QApplication.clipboard().setText(DONATE_ETH), copy.setText("Copied")))
+        row.addWidget(copy)
         for text, url in (("Website", WEBSITE), ("Discord", DISCORD), ("Source code", f"https://github.com/{REPO}")):
             b = QPushButton(text)
             b.clicked.connect(lambda _=False, u=url: webbrowser.open(u))

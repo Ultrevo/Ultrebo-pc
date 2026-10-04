@@ -142,6 +142,16 @@ On GitHub, **Releases > Draft a new release**, create a tag such as `v0.1.0`, **
 builds the Windows and macOS apps and attaches them to that release. The builds are unsigned: for fewer warnings, sign the
 Windows build (for example with [SignPath](https://signpath.org/), free for open source) and notarise the Mac build with an Apple Developer ID.
 
+## Support Ultrebo
+
+Ultrebo is free. If it saves you time you can optionally chip in, on the **Ethereum network** (ETH, or USDT/USDC on Ethereum):
+
+```
+0x108484e1744Fd6ED22288411B9596390E76CD5b2
+```
+
+Double-check the address and the network before sending; crypto payments can't be reversed. There is no obligation, and nothing is locked behind it.
+
 ## License and credits
 
 [GPL-3.0](LICENSE), copyright (C) 2026 Ultrevo. Anyone may use, study and modify this program, but copies and modified
