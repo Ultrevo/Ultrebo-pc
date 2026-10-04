@@ -142,7 +142,7 @@ class StepDialog(QDialog):
         wl.addWidget(self.watch)
         wl.addWidget(muted(
             "Checked in the background for the whole run, even while the steps are running. If two rules "
-            "are on screen at once, the one with the lower priority number goes first."
+            "are on screen at once, the one higher in the Rules list goes first."
         ))
         self.watch_options = QWidget()
         wo = QFormLayout(self.watch_options)
@@ -161,9 +161,6 @@ class StepDialog(QDialog):
         self.delay = spin(0, 3_600_000, step.delay_after_ms, " ms")
         self.delay_label = QLabel("Wait afterwards")
         timing.addRow(self.delay_label, self.delay)
-        self.priority = spin(-100000, 100000, step.priority)
-        if rule:
-            timing.addRow("Priority (low goes first)", self.priority)
         layout.addLayout(timing)
 
         # -- advanced
@@ -177,11 +174,8 @@ class StepDialog(QDialog):
         self.adv_form.setContentsMargins(0, 0, 0, 0)
         self.repeat = spin(1, 10000, step.repeat)
         self.timeout = spin(0, 3_600_000, step.timeout_ms, " ms")
-        if not rule:
-            self.adv_form.addRow("Priority (low runs first)", self.priority)
         self.adv_form.addRow("Repeat", self.repeat)
         self.adv_form.addRow("Look for up to (sequence mode)", self.timeout)
-        self.adv_form.addRow(muted("Priority decides the order: 10 runs before 20. Equal numbers keep list order."))
         layout.addWidget(self.adv_body)
         self.adv_body.setVisible(False)
         self.adv_toggle.toggled.connect(self._advanced_toggled)
@@ -375,8 +369,6 @@ class StepDialog(QDialog):
         self._update_thumb()
         self._set_row_visible(self.timeout, finder and not watcher)
         self._set_row_visible(self.repeat, not watcher)
-        if not self.rule:
-            self._set_row_visible(self.priority, True)
         # A rule has no repeat or look-for-up-to time, so there is nothing left to hide behind "Advanced".
         self.adv_toggle.setVisible(not self.rule)
         self.adv_body.setVisible(self.adv_toggle.isChecked() and not self.rule)
@@ -492,7 +484,6 @@ class StepDialog(QDialog):
         s.name = self.name.text().strip()
         s.type = kind
         s.delay_after_ms = self.delay.value()
-        s.priority = self.priority.value()
         s.repeat = self.repeat.value()
         s.timeout_ms = self.timeout.value()
 

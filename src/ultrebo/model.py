@@ -40,11 +40,11 @@ class RunMode(str, Enum):
     @property
     def help(self) -> str:
         if self is RunMode.SEQUENCE:
-            return "Runs every step once per loop, from the lowest priority number to the highest."
+            return "Runs every step once per loop, from the top of the list to the bottom."
         return (
-            "Each cycle, runs only the first step (lowest priority number) whose condition is met, "
-            "then starts over. Click, drag, scroll and key steps are always met, so give them the "
-            "highest number to act as a fallback. A \"Find\" step set to only wait holds back every "
+            "Each cycle, runs only the first step in the list whose condition is met, "
+            "then starts over. Click, drag, scroll and key steps are always met, so put them "
+            "at the bottom to act as a fallback. A \"Find\" step set to only wait holds back every "
             "step below it while its target is visible."
         )
 

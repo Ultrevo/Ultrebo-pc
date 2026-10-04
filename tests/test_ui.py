@@ -91,12 +91,12 @@ def test_text_rule(window):
     d = dialog_for(window, Step(type=StepType.TEXT), rule=True)
     d.t_text.setText("I'm here")
     d.t_threshold.setValue(0.75)
-    d.priority.setValue(15)
     d.on_seen.setCurrentIndex(d.on_seen.findData(WatchAction.RESTART.value))
     d.click_found.setChecked(False)
     d._accept()
     s = d.result_step()
-    assert (s.text, s.threshold, s.watch, s.click_on_found, s.priority) == ("I'm here", 0.75, True, False, 15)
+    assert (s.text, s.threshold, s.watch, s.click_on_found, s.priority) == ("I'm here", 0.75, True, False, 0)
+    assert not hasattr(d, "priority")  # order in the list is the priority; there is no number to type
     assert s.on_seen is WatchAction.RESTART and s.on_seen.label  # a real enum, not a string
 
 

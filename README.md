@@ -9,13 +9,13 @@ Ultrebo records your **mouse clicks, drags, scrolling and key presses**, lets yo
 It can also **look for a picture or for words on your screen** and react to them. It is built for repetitive game
 tasks such as tower-defense farming, and works with any program on Windows and macOS.
 
-- **Record** your input with the pauses between it, then edit each step: position, wait, repeat, priority, on/off, test one step.
-- **Priority order.** Lower number runs first; reorder with Up and Down.
-- **Two run modes.** *Sequence* runs everything in order, looped. *Reactive* runs only the highest-priority step whose condition is met.
+- **Record** your input with the pauses between it, then edit each step: position, wait, repeat, on/off, test one step.
+- **Order is priority.** Steps run from the top of the list down; move a step with Up and Down. There are no numbers to manage.
+- **Two run modes.** *Sequence* runs everything in order, looped. *Reactive* runs only the first step in the list whose condition is met.
 - **Find image.** Drag a box over your screen to pick a picture; Ultrebo clicks it whenever it appears.
 - **Find text.** Type words such as `I'm here`; Ultrebo reads the screen (offline) and clicks them when they show up.
 - **Rules.** Always-watching detections that check the screen in the background while your macro runs. When one
-  appears the macro can **pause and carry on**, or **restart from the first step**. Several can run at once; the highest priority wins.
+  appears the macro can **pause and carry on**, or **restart from the first step**. Several can run at once; the one nearest the top wins.
 - **Global hotkeys** that work while a game has focus: **F8** starts/stops, **F9** records (changeable in Settings).
 - **Private.** No accounts, no analytics. Macros and screenshots stay on your computer. The only network use is an
   optional check on GitHub for a newer version.
@@ -96,7 +96,7 @@ in the background for the whole run, even while your steps are busy. When its ta
 - **Restart macro from the start:** the macro stops, the rule (optionally) clicks, waits, then the macro starts again from step 1.
 
 You can have as many rules as you like in one macro. **If two rules are on screen at the same moment, the one nearer the top of the list
-(lower priority number) is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
+is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
 A macro with only rules just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
 
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.

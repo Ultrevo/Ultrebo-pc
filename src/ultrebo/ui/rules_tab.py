@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
-"""The Rules tab: always-watching detections that react while the macro runs, highest priority first."""
+"""The Rules tab: always-watching detections that react while the macro runs, top of the list first."""
 from __future__ import annotations
 
 import copy
@@ -113,7 +113,7 @@ class RulesTab(QWidget):
                 self.table.selectRow(row)
         self._loading = False
         self.hint.setText(
-            "Order 1 wins when several rules match at once. Use Up and Down to change it. Double-click a rule to edit it."
+            "The rule at the top wins when several match at once. Use Up and Down to change the order. Double-click a rule to edit it."
             if ordered else "No rules yet. Click Add rule to react to a pop-up or button whenever it appears."
         )
 

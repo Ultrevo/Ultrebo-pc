@@ -42,7 +42,7 @@ class Bridge(QObject):
 
 
 class MainWindow(QMainWindow):
-    COLUMNS = ["On", "#", "Step", "Details", "Wait", "Priority"]
+    COLUMNS = ["On", "#", "Step", "Details", "Wait"]
 
     def __init__(self, ctx: AppContext, bridge: Bridge, hotkeys: HotkeyManager | None = None):
         super().__init__()
@@ -194,7 +194,6 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemChanged.connect(self._item_changed)
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_step())
         v.addWidget(self.table, 1)
@@ -359,7 +358,7 @@ class MainWindow(QMainWindow):
             on.setData(Qt.ItemDataRole.UserRole, step.id)
             self.table.setItem(row, 0, on)
             for col, text in enumerate(
-                (str(row + 1), f"{step.title()}", step.summary(), f"{step.delay_after_ms} ms", str(step.priority)), start=1
+                (str(row + 1), f"{step.title()}", step.summary(), f"{step.delay_after_ms} ms"), start=1
             ):
                 item = QTableWidgetItem(text)
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
@@ -370,7 +369,7 @@ class MainWindow(QMainWindow):
                 self.table.selectRow(row)
         self._loading = False
         self.steps_hint.setText(
-            "Runs top to bottom (lowest priority number first). Double-click a step to edit it."
+            "Runs top to bottom. Use Up and Down to change the order. Double-click a step to edit it."
             if ordered else "No steps yet. Click Add step, or press Record and use your computer normally."
         )
         self._refresh_list_item()
