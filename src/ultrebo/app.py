@@ -66,34 +66,26 @@ def _selftest(say) -> int:
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication(sys.argv)  # noqa: F841 - Qt needs it to draw text
+    app = QApplication(sys.argv)  # noqa: F841 - also checks Qt starts
     import cv2
     import numpy as np
-    from PySide6.QtGui import QColor, QFont, QImage, QPainter
+    from PIL import Image, ImageDraw, ImageFont
 
     from . import textmatch
     from .imagematch import find_template, to_gray
 
-    image = QImage(640, 220, QImage.Format.Format_RGB888)
-    image.fill(QColor(40, 170, 80))
-    painter = QPainter(image)
-    painter.setPen(QColor("white"))
-    font = QFont()
-    font.setPixelSize(64)
-    font.setBold(True)
-    painter.setFont(font)
-    painter.drawText(image.rect(), 0x84, "I'm here")  # centred
-    painter.end()
-    w, h = image.width(), image.height()
-    rgb = np.frombuffer(image.constBits(), np.uint8).reshape(h, image.bytesPerLine())[:, : w * 3].reshape(h, w, 3)
-    bgr = np.ascontiguousarray(rgb[:, :, ::-1])
+    # Pillow's built-in font, so the check doesn't depend on fonts installed on the computer running it.
+    picture = Image.new("RGB", (640, 220), (40, 170, 80))
+    ImageDraw.Draw(picture).text((320, 110), "I'm here", fill=(255, 255, 255), font=ImageFont.load_default(size=72), anchor="mm")
+    bgr = np.ascontiguousarray(np.asarray(picture)[:, :, ::-1])
+    drawn = int((np.abs(bgr.astype(int) - bgr[0, 0].astype(int)).sum(axis=2) > 60).sum())
 
     lines = RapidOcrEngine().read(bgr)
     text_ok = textmatch.find(lines, "I'm here", 0.7) is not None
     patch = bgr[60:160, 150:450].copy()
     image_ok = find_template(to_gray(bgr), to_gray(patch), 0.9) is not None
-    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} ocr={[[w.text for w in line] for line in lines]}")
-    return 0 if (text_ok and image_ok) else 1
+    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} drawn={drawn} ocr={[[w.text for w in line] for line in lines]}")
+    return 0 if (text_ok and image_ok and drawn > 500) else 1
 
 
 def main() -> int:
