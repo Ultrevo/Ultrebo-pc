@@ -312,3 +312,49 @@ def test_overlay_box_and_point_selection(qapp, frame):
     pt.show()
     QTest.mouseClick(pt, Qt.MouseButton.LeftButton, pos=QPoint(50, 25))
     assert points == [(100, 50)]
+
+
+def test_rules_can_be_exported_and_imported_between_macros(window, frame, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    window.new_macro()
+    source = window._macro()
+    name = window.ctx.save_template(frame, 10, 10, 50, 40)
+    source.rules = [
+        Step(type=StepType.IMAGE, template_file=name, watch=True, priority=10, name="Claim"),
+        Step(type=StepType.TEXT, text="I'm here", watch=True, priority=20),
+    ]
+    window.rules_tab.refresh()
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: messages.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: messages.append(a[2]))
+    target = str(tmp_path / "shared")  # no extension typed: it is added
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (target, ""))
+    window.rules_tab.export_rules()
+    assert (tmp_path / "shared.ultrebo-rules").exists() and "Saved 2 rules" in messages[-1]
+
+    window.new_macro()
+    dest = window._macro()
+    assert dest.id != source.id and dest.rules == []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (target + ".ultrebo-rules", ""))
+    window.rules_tab.import_rules()
+    assert [r.name or r.text for r in dest.ordered_rules()] == ["Claim", "I'm here"]
+    assert dest.rules[0].template_file != name and window.store.template_path(dest.rules[0].template_file).exists()
+    assert window.rules_tab.table.rowCount() == 2 and "Added 2 rules" in messages[-1]
+
+    bad = tmp_path / "bad.ultrebo-rules"
+    bad.write_bytes(b"nope")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), ""))
+    window.rules_tab.import_rules()
+    assert "isn't a rule pack" in messages[-1] and len(dest.rules) == 2
+
+
+def test_exporting_with_no_rules_explains_why(window, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    window.new_macro()
+    messages = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: messages.append(a[2]))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "x"), ""))
+    window.rules_tab.export_rules()
+    assert "no rules" in messages[-1] and not (tmp_path / "x.ultrebo-rules").exists()

@@ -60,6 +60,9 @@ class MacroStore:
         self.folder.mkdir(parents=True, exist_ok=True)
         self.templates_dir = self.folder / "templates"
         self.templates_dir.mkdir(exist_ok=True)
+        #: Where shared rule packs are saved and opened from (the Rules tab's Share menu).
+        self.rule_packs_dir = self.folder / "Rule packs"
+        self.rule_packs_dir.mkdir(exist_ok=True)
         self._macros_file = self.folder / "macros.json"
         self._settings_file = self.folder / "settings.json"
         self._lock = threading.RLock()
@@ -117,6 +120,11 @@ class MacroStore:
 
     def new_template_name(self) -> str:
         return f"{uuid.uuid4().hex}.png"
+
+    def save_template_bytes(self, png: bytes) -> str:
+        name = self.new_template_name()
+        self.template_path(name).write_bytes(png)
+        return name
 
     def delete_template(self, name: str) -> None:
         try:

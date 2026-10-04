@@ -8,13 +8,14 @@ import shutil
 import uuid
 from typing import Callable
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QPushButton, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .. import rulepack
 from ..model import Macro, Step, StepType
 from .context import AppContext
 from .step_dialog import StepDialog
@@ -59,6 +60,18 @@ class RulesTab(QWidget):
             menu.addAction(action)
         self.add_button.setMenu(menu)
         bar.addWidget(self.add_button)
+        self.share_button = QPushButton("Share")
+        share = QMenu(self.share_button)
+        for label, slot in (
+            ("Import rules from a file...", self.import_rules),
+            ("Export these rules to a file...", self.export_rules),
+            ("Open the rule packs folder", self.open_packs_folder),
+        ):
+            action = QAction(label, share)
+            action.triggered.connect(lambda _=False, f=slot: f())
+            share.addAction(action)
+        self.share_button.setMenu(share)
+        bar.addWidget(self.share_button)
         bar.addStretch(1)
         for text, slot in (
             ("Edit", self.edit_rule), ("Test", self.test_selected), ("Up", lambda: self.move_rule(-1)),
@@ -216,6 +229,60 @@ class RulesTab(QWidget):
         macro.renumber_rules(ordered)
         self._save()
         self.refresh(select_id=rule.id)
+
+    # -- sharing
+    def export_rules(self) -> None:
+        macro = self._get_macro()
+        if macro is None:
+            return
+        safe = "".join(c for c in macro.name if c.isalnum() or c in " -_").strip() or "rules"
+        start = str(self.store.rule_packs_dir / f"{safe}{rulepack.EXTENSION}")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export rules", start, f"Ultrebo rules (*{rulepack.EXTENSION})"
+        )
+        if not path:
+            return
+        if not path.endswith(rulepack.EXTENSION):
+            path += rulepack.EXTENSION
+        try:
+            count = rulepack.export_pack(macro, self.store.templates_dir, path, macro.name)
+        except (rulepack.RulePackError, OSError) as e:
+            QMessageBox.warning(self, "Ultrebo", str(e))
+            return
+        QMessageBox.information(
+            self, "Ultrebo",
+            f"Saved {count} rule{'s' if count != 1 else ''} to:\n{path}\n\nSend that file to other players. "
+            "Picture rules match best on the same screen size and game window size; text rules work anywhere.",
+        )
+
+    def import_rules(self) -> None:
+        macro = self._get_macro()
+        if macro is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import rules", str(self.store.rule_packs_dir), f"Ultrebo rules (*{rulepack.EXTENSION});;All files (*)"
+        )
+        if not path:
+            return
+        try:
+            _name, rules = rulepack.read_pack(path, self.store.save_template_bytes, self.store.delete_template)
+        except (rulepack.RulePackError, OSError) as e:
+            QMessageBox.warning(self, "Ultrebo", str(e))
+            return
+        start = macro.next_rule_priority()
+        for i, rule in enumerate(rules):
+            rule.priority = start + i * 10
+        macro.rules.extend(rules)
+        self._save()
+        self.refresh(select_id=rules[0].id)
+        QMessageBox.information(
+            self, "Ultrebo",
+            f"Added {len(rules)} rule{'s' if len(rules) != 1 else ''} at the bottom of the list. Use Test on each one, "
+            "and pick any picture again that doesn't match on your screen.",
+        )
+
+    def open_packs_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.rule_packs_dir)))
 
     def test_selected(self) -> None:
         rule = self._selected()
