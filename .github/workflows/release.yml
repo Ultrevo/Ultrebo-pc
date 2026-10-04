@@ -54,7 +54,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          $p = Start-Process -FilePath dist/Ultrebo/Ultrebo.exe -ArgumentList "--selftest" -Wait -PassThru
+          $report = Join-Path $env:RUNNER_TEMP "selftest.txt"
+          $p = Start-Process -FilePath dist/Ultrebo/Ultrebo.exe -ArgumentList "--selftest", $report -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report }
           if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
       - name: Self-test the built app (macOS)
         if: runner.os == 'macOS'

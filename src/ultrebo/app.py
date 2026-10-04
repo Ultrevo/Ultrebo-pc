@@ -42,8 +42,27 @@ def build_window(store: MacroStore, screen, input_backend, ocr, hotkeys: HotkeyM
     return window, bridge
 
 
-def selftest() -> int:
-    """`Ultrebo --selftest`: checks the bundled libraries work (used by the build to verify each package)."""
+def selftest(report: Path | None = None) -> int:
+    """`Ultrebo --selftest [report-file]`: checks the bundled libraries work (used by the build to verify each package).
+
+    The Windows app has no console, so the result (or the error) is also written to `report` when one is given.
+    """
+    import traceback
+
+    def say(text: str) -> None:
+        print(text)
+        if report is not None:
+            with open(report, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+
+    try:
+        return _selftest(say)
+    except Exception:  # noqa: BLE001
+        say("selftest: crashed\n" + traceback.format_exc())
+        return 1
+
+
+def _selftest(say) -> int:
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -73,13 +92,14 @@ def selftest() -> int:
     text_ok = textmatch.find(lines, "I'm here", 0.7) is not None
     patch = bgr[60:160, 150:450].copy()
     image_ok = find_template(to_gray(bgr), to_gray(patch), 0.9) is not None
-    print(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__}")
+    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} ocr={[l.text for l in lines]}")
     return 0 if (text_ok and image_ok) else 1
 
 
 def main() -> int:
     if "--selftest" in sys.argv:
-        return selftest()
+        rest = sys.argv[sys.argv.index("--selftest") + 1:]
+        return selftest(Path(rest[0]) if rest else None)
     app = QApplication(sys.argv)
     app.setApplicationName("Ultrebo")
     app.setApplicationVersion(__version__)
