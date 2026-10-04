@@ -1,0 +1,214 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
+"""Macro data model. Steps and macros are plain dataclasses saved as JSON."""
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field, fields
+from enum import Enum
+from typing import Any
+
+
+class StepType(str, Enum):
+    CLICK = "click"
+    DRAG = "drag"
+    SCROLL = "scroll"
+    KEY = "key"
+    IMAGE = "image"
+    TEXT = "text"
+
+    @property
+    def label(self) -> str:
+        return {
+            StepType.CLICK: "Click",
+            StepType.DRAG: "Drag",
+            StepType.SCROLL: "Scroll",
+            StepType.KEY: "Key press",
+            StepType.IMAGE: "Find image",
+            StepType.TEXT: "Find text",
+        }[self]
+
+
+class RunMode(str, Enum):
+    SEQUENCE = "sequence"
+    REACTIVE = "reactive"
+
+    @property
+    def label(self) -> str:
+        return "Sequence" if self is RunMode.SEQUENCE else "Reactive"
+
+    @property
+    def help(self) -> str:
+        if self is RunMode.SEQUENCE:
+            return "Runs every step once per loop, from the lowest priority number to the highest."
+        return (
+            "Each cycle, runs only the first step (lowest priority number) whose condition is met, "
+            "then starts over. Click, drag, scroll and key steps are always met, so give them the "
+            "highest number to act as a fallback. A \"Find\" step set to only wait holds back every "
+            "step below it while its target is visible."
+        )
+
+
+class WatchAction(str, Enum):
+    CONTINUE = "continue"
+    RESTART = "restart"
+
+    @property
+    def label(self) -> str:
+        return "Pause, then carry on" if self is WatchAction.CONTINUE else "Restart macro from the start"
+
+
+@dataclass
+class Step:
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    name: str = ""
+    type: StepType = StepType.CLICK
+    enabled: bool = True
+    #: Lower number runs first.
+    priority: int = 0
+    #: Pause after this step (after each repeat).
+    delay_after_ms: int = 500
+    repeat: int = 1
+
+    # Positions are screen coordinates in the units the input backend uses.
+    x: int = 0
+    y: int = 0
+    x2: int = 0
+    y2: int = 0
+    button: str = "left"
+    #: Press time for clicks and keys, travel time for drags.
+    hold_ms: int = 60
+    #: 1 = single click, 2 = double click.
+    clicks: int = 1
+    scroll_dx: int = 0
+    scroll_dy: int = 0
+    #: Key or combination such as "a", "enter", "f5", "ctrl+shift+s".
+    keys: str = ""
+
+    # Image and text steps.
+    template_file: str | None = None
+    text: str = ""
+    threshold: float = 0.8
+    #: Sequence mode: how long to keep looking. 0 = look once.
+    timeout_ms: int = 5000
+    #: Click the target when found (otherwise only wait for it).
+    click_on_found: bool = True
+    #: Watch the screen in the background for the whole run.
+    watch: bool = False
+    on_seen: WatchAction = WatchAction.CONTINUE
+    #: Optional search area [x, y, width, height]; None = whole screen.
+    region: list[int] | None = None
+
+    @property
+    def is_image(self) -> bool:
+        return self.type is StepType.IMAGE
+
+    @property
+    def is_text(self) -> bool:
+        return self.type is StepType.TEXT
+
+    @property
+    def is_finder(self) -> bool:
+        return self.type in (StepType.IMAGE, StepType.TEXT)
+
+    def title(self) -> str:
+        return self.name.strip() or self.type.label
+
+    def summary(self) -> str:
+        if self.type is StepType.CLICK:
+            what = "Double-click" if self.clicks == 2 else "Click"
+            return f"{what} {self.button} at ({self.x}, {self.y})"
+        if self.type is StepType.DRAG:
+            return f"Drag ({self.x}, {self.y}) to ({self.x2}, {self.y2})"
+        if self.type is StepType.SCROLL:
+            return f"Scroll {self.scroll_dy:+d} (horizontal {self.scroll_dx:+d})" if self.scroll_dx else f"Scroll {self.scroll_dy:+d}"
+        if self.type is StepType.KEY:
+            return f"Press {self.keys or '(no key)'}"
+        target = "image" if self.is_image else f'"{self.text}"'
+        if self.is_image and not self.template_file:
+            return "no image picked"
+        if self.is_text and not self.text.strip():
+            return "no text entered"
+        verb = "click" if self.click_on_found else "wait for"
+        if self.watch:
+            return f"always watching for {target}: {self.on_seen.label.lower()}"
+        return f"{verb} {target}"
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            out[f.name] = value.value if isinstance(value, Enum) else value
+        return out
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Step":
+        defaults = cls()
+        kwargs: dict[str, Any] = {}
+        for f in fields(cls):
+            if f.name not in data:
+                continue
+            value = data[f.name]
+            default = getattr(defaults, f.name)
+            if isinstance(default, Enum):
+                try:
+                    value = type(default)(value)
+                except ValueError:
+                    value = default
+            kwargs[f.name] = value
+        return cls(**kwargs)
+
+
+@dataclass
+class Macro:
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    name: str = "New macro"
+    mode: RunMode = RunMode.SEQUENCE
+    #: Loops (sequence) or cycles (reactive). 0 = run until stopped.
+    loops: int = 0
+    loop_delay_ms: int = 1000
+    #: How often image/text steps look at the screen.
+    scan_interval_ms: int = 1000
+    steps: list[Step] = field(default_factory=list)
+
+    def ordered(self) -> list[Step]:
+        """Steps in execution order: priority ascending, ties keep list order."""
+        indexed = sorted(enumerate(self.steps), key=lambda p: (p[1].priority, p[0]))
+        return [s for _, s in indexed]
+
+    def next_priority(self) -> int:
+        return (max((s.priority for s in self.steps), default=0)) + 10
+
+    def renumber(self, ordered: list[Step]) -> None:
+        """Make the given order permanent: priorities 10, 20, 30, ..."""
+        for i, step in enumerate(ordered):
+            step.priority = (i + 1) * 10
+        self.steps = list(ordered)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "mode": self.mode.value,
+            "loops": self.loops,
+            "loop_delay_ms": self.loop_delay_ms,
+            "scan_interval_ms": self.scan_interval_ms,
+            "steps": [s.to_dict() for s in self.steps],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Macro":
+        default = cls()
+        try:
+            mode = RunMode(data.get("mode", default.mode.value))
+        except ValueError:
+            mode = default.mode
+        return cls(
+            id=data.get("id") or uuid.uuid4().hex,
+            name=data.get("name", default.name),
+            mode=mode,
+            loops=int(data.get("loops", default.loops)),
+            loop_delay_ms=int(data.get("loop_delay_ms", default.loop_delay_ms)),
+            scan_interval_ms=int(data.get("scan_interval_ms", default.scan_interval_ms)),
+            steps=[Step.from_dict(s) for s in data.get("steps", [])],
+        )
