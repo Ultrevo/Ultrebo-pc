@@ -34,6 +34,47 @@ DEFAULT_SCAN_S = 0.25
 WATCH_COOLDOWN_S = 1.5
 
 
+class GroupGate:
+    """Which rule groups are resting. A group rests as soon as one of its rules is found.
+
+    It starts being checked again when its pause (if it has one) is over, or when the macro restarts
+    and the group is set to re-enable then.
+    """
+
+    def __init__(self, groups, clock: Callable[[], float] = time.monotonic):
+        self._groups = {g.id: g for g in groups}
+        self._until: dict[str, float] = {}
+        self._clock = clock
+        self._lock = threading.Lock()
+
+    def is_resting(self, group_id: str | None) -> bool:
+        if not group_id:
+            return False
+        with self._lock:
+            until = self._until.get(group_id)
+            if until is None:
+                return False
+            if until <= self._clock():
+                del self._until[group_id]
+                return False
+            return True
+
+    def found(self, group_id: str | None):
+        """A rule in this group was found: rest the whole group. Returns the group, or None for an ungrouped rule."""
+        group = self._groups.get(group_id or "")
+        if group is not None:
+            with self._lock:
+                self._until[group.id] = self._clock() + group.pause_s if group.pause_s > 0 else float("inf")
+        return group
+
+    def restarted(self) -> None:
+        """The macro started over: groups set to re-enable on restart are checked again."""
+        with self._lock:
+            for gid in list(self._until):
+                if self._groups[gid].reset_on_restart:
+                    del self._until[gid]
+
+
 class Cancel:
     """A stop flag that can be chained to a parent (stopping the run stops its workers)."""
 
@@ -171,6 +212,7 @@ class Runner:
         self._main: _Worker | None = None
         self._scan_s = DEFAULT_SCAN_S
         self._state_lock = threading.Lock()
+        self._gate = GroupGate([])
 
     # ------------------------------------------------------------------ public
 
@@ -255,6 +297,7 @@ class Runner:
             main_steps = [s for s in macro.ordered() if s.enabled]
             watchers = [r for r in macro.ordered_rules() if r.enabled]  # first in this list wins when several show
 
+            self._gate = GroupGate(macro.groups)
             self._main = self._spawn_main(macro, main_steps, stop)
             watcher_thread = None
             if watchers:
@@ -302,6 +345,8 @@ class Runner:
             while not cancel.is_set() and (macro.loops == 0 or rounds < macro.loops):
                 rounds += 1
                 if macro.mode is RunMode.SEQUENCE:
+                    if rounds > 1:
+                        self._gate.restarted()  # a new loop is a restart: groups set to re-enable wake up
                     for step in steps:
                         if cancel.is_set():
                             return
@@ -380,12 +425,11 @@ class Runner:
     # -- watchers
     def _watch_loop(self, macro: Macro, watchers: list[Step], main_steps: list[Step], stop: Cancel) -> None:
         last_seen: dict[str, float] = {}
-        groups = {g.id: g for g in macro.groups}
-        resting: dict[str, float] = {}  # group id -> when it starts being checked again
+        gate = self._gate
         try:
             while not stop.wait(self._scan_s):
                 now = time.monotonic()
-                active = [w for w in watchers if resting.get(w.group_id or "", 0.0) <= now]
+                active = [w for w in watchers if not gate.is_resting(w.group_id)]
                 if not active:
                     continue  # every group is resting: nothing to look for
                 frame = self.finder.capture()
@@ -416,10 +460,11 @@ class Runner:
                 if restart and not stop.is_set():
                     self._main = self._spawn_main(macro, main_steps, stop)
                 last_seen[step.id] = time.monotonic()
-                group = groups.get(step.group_id or "")
+                group = gate.found(step.group_id)
                 if group is not None:
-                    resting[group.id] = last_seen[step.id] + group.pause_s if group.pause_s > 0 else float("inf")
                     self._on_status(f"Group {group.name}: found, so the group stops looking")
+                if restart:
+                    gate.restarted()  # the macro started over, so groups set to re-enable are checked again
         except Exception as e:  # noqa: BLE001
             self._on_error(str(e))
             stop.set()

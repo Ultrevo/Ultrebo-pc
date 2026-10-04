@@ -65,7 +65,10 @@ def export_pack(macro: Macro, templates_dir: Path, path: Path, name: str | None 
             data["image"] = member
         entries.append(data)
     used = {r.group_id for r in rules if r.group_id}
-    groups = [{"name": g.name, "pause_s": g.pause_s} for g in macro.groups if g.id in used]
+    groups = [
+        {"name": g.name, "pause_s": g.pause_s, "reset_on_restart": g.reset_on_restart}
+        for g in macro.groups if g.id in used
+    ]
     manifest = {
         "format": FORMAT, "platform": PLATFORM, "app_version": __version__, "name": name or macro.name,
         "groups": groups, "rules": entries,
@@ -146,7 +149,10 @@ def read_pack(
         raw_groups = manifest.get("groups", [])
         for item in raw_groups if isinstance(raw_groups, list) else []:
             if isinstance(item, dict) and str(item.get("name") or "").strip():
-                group = RuleGroup.from_dict({"name": str(item["name"]).strip(), "pause_s": item.get("pause_s", 0)})
+                group = RuleGroup.from_dict({
+                    "name": str(item["name"]).strip(), "pause_s": item.get("pause_s", 0),
+                    "reset_on_restart": item.get("reset_on_restart") is True,
+                })
                 group.id = uuid.uuid4().hex
                 groups.setdefault(group.name.lower(), group)
         rules: list[Step] = []

@@ -15,7 +15,7 @@ from conftest import FakeInput, FakeScreen, wait_until, with_pattern
 from ultrebo import inputs
 from ultrebo import runner as runner_module
 from ultrebo.inputs import PynputInput
-from ultrebo.model import Macro, RuleGroup, Step, StepType, WatchAction
+from ultrebo.model import Macro, RuleGroup, RunMode, Step, StepType, WatchAction
 from ultrebo.runner import Runner
 from ultrebo.ui.groups_dialog import GroupsDialog
 from ultrebo.ui.step_dialog import StepDialog
@@ -216,3 +216,67 @@ def test_groups_dialog_adds_renames_and_deletes(qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     d._delete()
     assert macro.groups == [] and macro.rules[0].group_id is None
+
+
+# ------------------------------------------------------------------ groups waking up on a restart
+
+def test_group_gate_rests_pauses_and_resets():
+    now = [100.0]
+    a = RuleGroup(name="forever")
+    b = RuleGroup(name="timed", pause_s=10)
+    c = RuleGroup(name="resets", reset_on_restart=True)
+    from ultrebo.runner import GroupGate
+
+    gate = GroupGate([a, b, c], clock=lambda: now[0])
+    assert not gate.is_resting(None) and not gate.is_resting(a.id)
+    assert gate.found(None) is None and gate.found("unknown") is None
+    for g in (a, b, c):
+        assert gate.found(g.id) is g
+        assert gate.is_resting(g.id)
+    now[0] += 11
+    assert not gate.is_resting(b.id) and gate.is_resting(a.id) and gate.is_resting(c.id)  # the pause is over
+    gate.restarted()
+    assert gate.is_resting(a.id) and not gate.is_resting(c.id)  # only groups set to re-enable wake up
+
+
+def loop_macro(group, rules, steps=None):
+    steps = steps if steps is not None else [Step(type=StepType.CLICK, x=1, y=1, delay_after_ms=10, hold_ms=1, priority=10)]
+    return Macro(loops=0, loop_delay_ms=50, scan_interval_ms=100, groups=[group], steps=steps, rules=rules)
+
+
+def rule_clicks(inp):
+    return [x for _, x, y in inp.clicks() if x > 100]  # the rule's picture is on the right of the screen
+
+
+def test_a_finished_loop_wakes_groups_that_reenable_on_restart(templates_dir, blank, pattern):
+    frame = with_pattern(blank, pattern)
+    r, inp = make_runner(templates_dir, frame)
+    group = RuleGroup(name="Pop-ups", reset_on_restart=True)
+    r.start(loop_macro(group, [rule("button.png", 10, group.id)]))
+    assert wait_until(lambda: len(rule_clicks(inp)) >= 3, timeout=8)  # found again after each loop starts over
+    r.stop()
+
+
+def test_without_the_option_a_finished_loop_does_not_wake_the_group(templates_dir, blank, pattern):
+    frame = with_pattern(blank, pattern)
+    r, inp = make_runner(templates_dir, frame)
+    group = RuleGroup(name="Pop-ups", reset_on_restart=False)
+    r.start(loop_macro(group, [rule("button.png", 10, group.id)]))
+    time.sleep(2.5)
+    r.stop()
+    assert len(rule_clicks(inp)) == 1
+
+
+def test_a_rule_that_restarts_the_macro_wakes_groups_set_to_reenable(templates_dir, blank, pattern):
+    frame = with_pattern(blank, pattern)
+    for reset, expected_many in ((True, True), (False, False)):
+        r, inp = make_runner(templates_dir, frame)
+        group = RuleGroup(name="Pop-ups", reset_on_restart=reset)
+        restarting = rule("button.png", 10, group.id, on_seen=WatchAction.RESTART)
+        # reactive mode never counts a cycle as a restart, so only the rule's restart can wake the group
+        macro = loop_macro(group, [restarting])
+        macro.mode = RunMode.REACTIVE
+        r.start(macro)
+        time.sleep(2.5)
+        r.stop()
+        assert (len(rule_clicks(inp)) >= 3) is expected_many

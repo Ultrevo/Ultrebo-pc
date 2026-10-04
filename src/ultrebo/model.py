@@ -66,9 +66,11 @@ class RuleGroup:
     name: str = "Group"
     #: After one rule in the group is found, stop checking the whole group for this many seconds (0 = until the macro stops).
     pause_s: int = 0
+    #: Start checking the group again whenever the macro restarts: it finishes a loop and starts over, or a rule restarts it.
+    reset_on_restart: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "pause_s": self.pause_s}
+        return {"id": self.id, "name": self.name, "pause_s": self.pause_s, "reset_on_restart": self.reset_on_restart}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RuleGroup":
@@ -76,7 +78,10 @@ class RuleGroup:
             pause = min(max(int(data.get("pause_s", 0)), 0), 86400)
         except (TypeError, ValueError):
             pause = 0
-        return cls(id=str(data.get("id") or uuid.uuid4().hex), name=str(data.get("name") or "Group")[:60], pause_s=pause)
+        return cls(
+            id=str(data.get("id") or uuid.uuid4().hex), name=str(data.get("name") or "Group")[:60], pause_s=pause,
+            reset_on_restart=data.get("reset_on_restart") is True,
+        )
 
 
 @dataclass

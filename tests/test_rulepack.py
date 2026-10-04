@@ -180,7 +180,7 @@ def test_groups_travel_with_the_rules_and_merge_by_name(store, other, tmp_path):
     path = tmp_path / "g.ultrebo-rules"
     rulepack.export_pack(macro, store.templates_dir, path)
     with zipfile.ZipFile(path) as z:
-        assert json.loads(z.read("rules.json"))["groups"] == [{"name": "Pop-ups", "pause_s": 30}]  # only groups in use
+        assert json.loads(z.read("rules.json"))["groups"] == [{"name": "Pop-ups", "pause_s": 30, "reset_on_restart": False}]  # only groups in use
     _, rules, groups = read(path, other)
     assert [g.name for g in groups] == ["Pop-ups"] and groups[0].pause_s == 30
     assert [r.group_id for r in rules] == [groups[0].id, groups[0].id, None]

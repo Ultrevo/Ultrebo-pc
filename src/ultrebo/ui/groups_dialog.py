@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -47,7 +47,14 @@ class GroupsDialog(QDialog):
         self.pause.valueChanged.connect(self._pause_changed)
         form.addRow("Stop checking for", self.pause)
         v.addLayout(form)
-        self.pause_help = QLabel("0 means until the macro stops. Use a number of seconds for a pop-up that comes back now and then.")
+        self.reset = QCheckBox("Start checking again when the macro restarts")
+        self.reset.setToolTip("The macro restarts when it finishes a loop and starts over, or when a rule restarts it")
+        self.reset.toggled.connect(self._reset_changed)
+        v.addWidget(self.reset)
+        self.pause_help = QLabel(
+            "0 seconds means until the macro stops. Use a number of seconds for a pop-up that comes back now and then. "
+            "A restart is a finished loop starting over (Sequence mode), or a rule set to restart the macro."
+        )
         self.pause_help.setWordWrap(True)
         self.pause_help.setProperty("muted", True)
         v.addWidget(self.pause_help)
@@ -84,12 +91,19 @@ class GroupsDialog(QDialog):
         group = self._current()
         self._loading = True
         self.pause.setValue(group.pause_s if group else 0)
+        self.reset.setChecked(bool(group and group.reset_on_restart))
+        self.reset.setEnabled(group is not None)
         self._loading = False
 
     def _pause_changed(self, value: int) -> None:
         group = self._current()
         if group is not None and not self._loading:
             group.pause_s = value
+
+    def _reset_changed(self, on: bool) -> None:
+        group = self._current()
+        if group is not None and not self._loading:
+            group.reset_on_restart = on
 
     # -- actions
     def _ask_name(self, title: str, start: str = "") -> str | None:

@@ -106,7 +106,7 @@ want it.
 
 If several rules are really the same thing, such as three pictures of one pop-up, put them in a **group** (**Groups...** on the Rules tab, then pick the group in each
 rule). As soon as one rule in a group is found, the whole group stops being checked. By default that lasts until the macro stops; set a number of seconds
-for a pop-up that comes back now and then, and the group starts looking again after that long. Rules with no group are unaffected. Groups are shared along with the rules.
+for a pop-up that comes back now and then, and the group starts looking again after that long. Tick **Start checking again when the macro restarts** to have a group wake up on its own whenever the macro restarts: it finishes a loop and starts over (Sequence mode), or a rule set to restart the macro does it. In Reactive mode only a restarting rule counts, because a cycle isn't a restart. Rules with no group are unaffected. Groups are shared along with the rules.
 
 #### Sharing rules with other players
 
