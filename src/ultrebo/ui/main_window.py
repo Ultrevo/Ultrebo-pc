@@ -11,12 +11,12 @@ import webbrowser
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QTableWidget,
+    QAbstractItemView, QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressDialog, QPushButton, QSpinBox, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from .. import __version__
+from .. import __version__, selfupdate
 from ..hotkeys import HotkeyManager
 from ..model import Macro, RunMode, Step, StepType
 from ..recorder import Recorder
@@ -26,6 +26,7 @@ from .dialogs import AboutDialog, SettingsDialog
 from .rules_tab import RulesTab
 from .setup_guide import SetupCard
 from .step_dialog import StepDialog
+from .update_flow import UpdateJob
 
 START_DELAY_MS = 800  # time to get the game in front after pressing Start in the window
 
@@ -624,12 +625,78 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setWindowTitle("Update available")
         box.setText(f"Ultrebo {update.version} is out (you have {__version__}).")
-        box.setInformativeText("Download opens the release page in your browser.")
-        download = box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
+        update_now = None
+        if selfupdate.can_update(update):
+            box.setInformativeText(
+                "Update now downloads it, closes Ultrebo and opens the new version. Your macros and settings are kept."
+            )
+            update_now = box.addButton("Update now", QMessageBox.ButtonRole.AcceptRole)
+            page = box.addButton("Release page", QMessageBox.ButtonRole.ActionRole)
+        else:
+            box.setInformativeText("Download opens the release page in your browser.")
+            page = box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
         box.exec()
-        if box.clickedButton() is download:
+        clicked = box.clickedButton()
+        if update_now is not None and clicked is update_now:
+            self._start_self_update(update)
+        elif clicked is page:
             webbrowser.open(update.url)
+
+    def _start_self_update(self, update: Update) -> None:
+        if self._running:
+            QMessageBox.information(self, "Ultrebo", "Stop the macro first, then update.")
+            return
+        progress = QProgressDialog(f"Downloading Ultrebo {update.version}...", "Cancel", 0, 100, self)
+        progress.setWindowTitle("Updating Ultrebo")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        job = UpdateJob(update, self)
+        self._update_job, self._update_progress = job, progress
+
+        def on_progress(done: int, total: int) -> None:
+            progress.setValue(min(int(100 * done / max(total, 1)), 99))
+
+        def on_prepared(prepared) -> None:
+            progress.setLabelText("Installing... Ultrebo will close and open again.")
+            progress.setCancelButton(None)
+            try:
+                selfupdate.apply(prepared)
+            except Exception as e:  # noqa: BLE001
+                progress.close()
+                self._update_failed(update, f"The update could not be started: {e}")
+                return
+            progress.close()
+            self._quit_for_update()
+
+        def on_failed(message: str) -> None:
+            progress.close()
+            self._update_failed(update, message)
+
+        job.progress.connect(on_progress)
+        job.prepared.connect(on_prepared)
+        job.failed.connect(on_failed)
+        progress.canceled.connect(job.cancel)
+        progress.setValue(0)
+        job.start()
+
+    def _update_failed(self, update: Update, message: str) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Ultrebo")
+        box.setText(message)
+        box.setInformativeText("You can download the new version from the release page instead.")
+        page = box.addButton("Open release page", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is page:
+            webbrowser.open(update.url)
+
+    def _quit_for_update(self) -> None:
+        self.close()  # stops the macro and the hotkeys
+        QTimer.singleShot(150, QApplication.quit)
 
     # ---------------------------------------------------------------- settings
 

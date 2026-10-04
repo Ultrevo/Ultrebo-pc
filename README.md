@@ -110,6 +110,17 @@ anyone. They open their own macro's Rules tab and use **Share > Import rules fro
 
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.
 
+## Updating
+
+When a newer version is out, Ultrebo shows an **Update available** message when it opens. Click **Update now**: it downloads the new version
+from this project's GitHub release, checks it against GitHub's published checksum, closes, swaps the new files in and opens again. Your macros and
+settings are kept, because they're stored separately.
+
+- If Ultrebo is installed somewhere it can't write to (for example `Program Files`), the message offers the release page instead. Download the zip and replace the folder yourself.
+- **On a Mac you may need to switch Accessibility, Input Monitoring and Screen Recording back on** after an update, because macOS treats the new, unsigned app as a different program.
+- Versions before 0.1.1 only tell you about updates. If you have 0.1.0, download the new version once by hand; after that, Update now works.
+- Switch the check off in *Settings*.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -127,7 +138,7 @@ Macros made with an older version, where a step was marked "always watching", ar
 Everything runs on your computer. Macros and cropped images are stored in your user folder
 (`%APPDATA%\Ultrebo` on Windows, `~/Library/Application Support/Ultrebo` on a Mac). Screenshots are examined in memory and thrown away;
 the only picture saved is the box you crop. Text recognition (RapidOCR) is bundled and runs offline.
-The one network request is the optional update check against GitHub (switch it off in *Settings*).
+The only network use is the optional update check against GitHub (switch it off in *Settings*), plus downloading the new version if you click **Update now**.
 
 **Recording captures every key you press until you stop it**, so don't type passwords while recording.
 

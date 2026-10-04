@@ -358,3 +358,51 @@ def test_exporting_with_no_rules_explains_why(window, monkeypatch, tmp_path):
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "x"), ""))
     window.rules_tab.export_rules()
     assert "no rules" in messages[-1] and not (tmp_path / "x.ultrebo-rules").exists()
+
+
+def test_update_now_downloads_installs_and_closes(window, monkeypatch, qapp):
+    from ultrebo import selfupdate
+    from ultrebo.updater import Update
+
+    quits, applied = [], []
+    prepared = object()
+
+    def fake_prepare(update, progress, cancelled):
+        progress(50, 100)
+        progress(100, 100)
+        return prepared
+
+    monkeypatch.setattr(selfupdate, "prepare", fake_prepare)
+    monkeypatch.setattr(selfupdate, "apply", lambda p: applied.append(p))
+    monkeypatch.setattr(window, "_quit_for_update", lambda: quits.append(True))
+    window._start_self_update(Update("0.2.0", "https://github.com/Ultrevo/Ultrebo-pc/releases/tag/v0.2.0"))
+    from conftest import wait_until
+
+    assert wait_until(lambda: (qapp.processEvents() or True) and quits, timeout=5)
+    assert applied == [prepared]
+
+
+def test_a_failed_update_offers_the_release_page(window, monkeypatch, qapp):
+    from ultrebo import selfupdate
+    from ultrebo.updater import Update
+
+    shown = []
+    monkeypatch.setattr(selfupdate, "prepare", lambda *a: (_ for _ in ()).throw(selfupdate.UpdateError("checksum mismatch")))
+    monkeypatch.setattr(window, "_update_failed", lambda update, message: shown.append(message))
+    window._start_self_update(Update("0.2.0", "https://github.com/x"))
+    from conftest import wait_until
+
+    assert wait_until(lambda: (qapp.processEvents() or True) and shown, timeout=5)
+    assert shown == ["checksum mismatch"]
+
+
+def test_update_is_refused_while_a_macro_runs(window, monkeypatch):
+    from ultrebo import selfupdate
+    from ultrebo.updater import Update
+
+    messages = []
+    window._running = True
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: messages.append(a[2]))
+    monkeypatch.setattr(selfupdate, "prepare", lambda *a: pytest.fail("must not start"))
+    window._start_self_update(Update("0.2.0", "u"))
+    assert "Stop the macro first" in messages[-1]
