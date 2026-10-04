@@ -1,6 +1,5 @@
 # Ultrebo for desktop
 
-[![CI](https://github.com/Ultrevo/Ultrebo-pc/actions/workflows/ci.yml/badge.svg)](https://github.com/Ultrevo/Ultrebo-pc/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 **Website:** https://ultrevo.github.io/Ultrebo/  -  **Discord:** https://discord.gg/mAKGfaAWWW  -  **Android version:** https://github.com/Ultrevo/Ultrebo
@@ -9,16 +8,14 @@ Ultrebo records your **mouse clicks, drags, scrolling and key presses**, lets yo
 It can also **look for a picture or for words on your screen** and react to them. It is built for repetitive game
 tasks such as tower-defense farming, and works with any program on Windows and macOS.
 
-- **Record** your input with the pauses between it, then edit each step: position, wait, repeat, on/off, test one step.
-- **Order is priority.** Steps run from the top of the list down; move a step with Up and Down. There are no numbers to manage.
+- **Record** your mouse and keyboard with the pauses between them, then edit each step: position, wait, repeat, on/off, and a test button for each one.
+- **The list order is the run order.** Move a step with Up and Down.
 - **Two run modes.** *Sequence* runs everything in order, looped. *Reactive* runs only the first step in the list whose condition is met.
-- **Find image.** Drag a box over your screen to pick a picture; Ultrebo clicks it whenever it appears.
-- **Find text.** Type words such as `I'm here`; Ultrebo reads the screen (offline) and clicks them when they show up.
-- **Rules.** Always-watching detections that check the screen in the background while your macro runs. When one
-  appears the macro can **pause and carry on**, or **restart from the first step**. Several can run at once; the one nearest the top wins.
+- **Find image.** Drag a box over your screen to pick a picture and Ultrebo clicks it whenever it appears.
+- **Find text.** Type words such as `I'm here`. Ultrebo reads the screen on your computer and clicks them when they show up.
+- **Rules.** Always-watching detections that handle pop-ups while your macro runs. Add as many as you like.
 - **Global hotkeys** that work while a game has focus: **F8** starts/stops, **F9** records (changeable in Settings).
-- **Private.** No accounts, no analytics. Macros and screenshots stay on your computer. The only network use is an
-  optional check on GitHub for a newer version.
+- **Private.** No accounts, no ads, no tracking. Your macros and screenshots stay on your computer.
 
 > **Use responsibly.** Many games forbid automation in their terms of service and may suspend accounts that use it.
 > Ultrebo does not hide itself or avoid detection. You are responsible for how you use it.
@@ -31,7 +28,7 @@ Get the latest build from the [Releases page](../../releases/latest):
 | --- | --- |
 | Windows 10 / 11 | `Ultrebo-v…-windows-x64.zip` |
 | macOS, Apple silicon (M1 and newer) | `Ultrebo-v…-macos-apple-silicon.zip` |
-| macOS, Intel | `Ultrebo-v…-macos-intel.zip` (if listed) |
+| macOS, Intel | `Ultrebo-v…-macos-intel.zip` (not always available) |
 
 ### Windows
 
@@ -39,7 +36,7 @@ Get the latest build from the [Releases page](../../releases/latest):
 2. Double-click `Ultrebo.exe`.
 3. Windows may show **"Windows protected your PC"** because the app isn't signed with a paid certificate. Click
    **More info**, then **Run anyway**. Some antivirus programs also flag any program that records keyboard and mouse
-   input; Ultrebo only records while you press Record, and its [source code](.) is public.
+   input; Ultrebo only records while you press Record, and its source code is public.
 4. If a game ignores Ultrebo's clicks, right-click `Ultrebo.exe` and choose **Run as administrator**. Windows blocks
    input into programs that run at a higher level than the one sending it.
 
@@ -57,7 +54,7 @@ Get the latest build from the [Releases page](../../releases/latest):
 
 ### Linux
 
-Not packaged yet. It runs from source on X11 (see below); Wayland blocks the kind of input control Ultrebo needs.
+Not packaged yet. It can run from source on X11 (see [MAINTAINING.md](MAINTAINING.md)); Wayland blocks the kind of input control Ultrebo needs.
 
 ## Quick start
 
@@ -87,7 +84,7 @@ your game on the monitor you chose, and re-record if you move it.
 - **Search area:** for either, you can pick a smaller area of the screen to search. It's faster and more accurate.
 - **Click it when found** can be switched off to make a step that only *waits* for something to appear.
 
-### Rules (pop-up watcher)
+### Rules
 
 Open a macro's **Rules** tab to make always-watching detections. A rule looks for an image or for words and checks the screen
 in the background for the whole run, even while your steps are busy. When its target appears:
@@ -122,35 +119,10 @@ The one network request is the optional update check against GitHub (switch it o
 
 **Recording captures every key you press until you stop it**, so don't type passwords while recording.
 
-## Run from source
+## Community and support
 
-```
-git clone https://github.com/Ultrevo/Ultrebo-pc
-cd Ultrebo-pc
-python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-pip uninstall -y opencv-python && pip install --force-reinstall --no-deps opencv-python-headless
-python -m ultrebo
-python -m pytest
-```
-
-Build a downloadable app yourself with `pip install pyinstaller && pyinstaller --noconfirm --clean packaging/ultrebo.spec`.
-
-```
-src/ultrebo/
-  model.py      Macro and Step data (saved as JSON)
-  runner.py     Sequence/reactive loops and the pop-up watcher
-  recorder.py   Turns recorded input into steps
-  imagematch.py, textmatch.py, ocr.py   Finding pictures and words on the screen
-  inputs.py, screen.py, hotkeys.py      Mouse/keyboard, screenshots, global hotkeys
-  ui/           The Qt interface
-```
-
-## Releasing (maintainers)
-
-On GitHub, **Releases > Draft a new release**, create a tag such as `v0.1.0`, **Publish**. The *Release builds* workflow runs the tests,
-builds the Windows and macOS apps and attaches them to that release. The builds are unsigned: for fewer warnings, sign the
-Windows build (for example with [SignPath](https://signpath.org/), free for open source) and notarise the Mac build with an Apple Developer ID.
+Questions, bug reports or ideas? Join the [Discord server](https://discord.gg/mAKGfaAWWW) and open a support ticket, or open an
+[issue](../../issues) on GitHub.
 
 ## Support Ultrebo
 
