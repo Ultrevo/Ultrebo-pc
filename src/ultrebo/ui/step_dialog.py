@@ -54,10 +54,14 @@ def muted(text: str) -> QLabel:
 
 
 class StepDialog(QDialog):
-    def __init__(self, ctx: AppContext, step: Step, parent: QWidget | None = None, is_new: bool = False, rule: bool = False):
+    def __init__(
+        self, ctx: AppContext, step: Step, parent: QWidget | None = None, is_new: bool = False, rule: bool = False,
+        groups: list | None = None,
+    ):
         super().__init__(parent)
         self.ctx = ctx
         self.rule = rule
+        self._groups = groups or []
         noun = "rule" if rule else "step"
         self.setWindowTitle(f"New {noun}" if is_new else f"Edit {noun}")
         self.setMinimumWidth(560)
@@ -151,6 +155,18 @@ class StepDialog(QDialog):
         for action in WatchAction:
             self.on_seen.addItem(action.label, action.value)
         wo.addRow("Then", self.on_seen)
+        self.nudge = QCheckBox("Move the mouse a little before clicking")
+        self.nudge.setToolTip(
+            "Glides the mouse to the target and wiggles it slightly first. Some games, such as Roblox, "
+            "only notice the mouse when it moves."
+        )
+        wo.addRow("", self.nudge)
+        self.group_box = QComboBox()
+        self.group_box.addItem("(no group)", "")
+        for g in self._groups:
+            self.group_box.addItem(g.name, g.id)
+        self.group_box.setToolTip("When one rule in a group is found, the whole group stops being checked.")
+        wo.addRow("Group", self.group_box)
         wl.addWidget(self.watch_options)
         fl.addWidget(self.watch_group)
         self.watch_group.setVisible(rule)
@@ -473,6 +489,9 @@ class StepDialog(QDialog):
         self.f_button.setCurrentText(s.button if s.button in BUTTONS else "left")
         self.f_double.setChecked(s.clicks == 2)
         self.on_seen.setCurrentIndex(self.on_seen.findData(s.on_seen.value))
+        self.nudge.setChecked(s.nudge)
+        at = self.group_box.findData(s.group_id or "")
+        self.group_box.setCurrentIndex(max(at, 0))
         self._refresh()
 
     def result_step(self) -> Step:
@@ -525,6 +544,8 @@ class StepDialog(QDialog):
             s.watch = self.rule
             if self.rule:
                 s.on_seen = WatchAction(self.on_seen.currentData())
+                s.nudge = self.nudge.isChecked()
+                s.group_id = self.group_box.currentData() or None
                 s.repeat = 1
             s.region = list(self._region) if self._region else None
         self.accept()

@@ -18,9 +18,10 @@ from PySide6.QtWidgets import (
 from .. import rulepack
 from ..model import Macro, Step, StepType
 from .context import AppContext
+from .groups_dialog import GroupsDialog
 from .step_dialog import StepDialog
 
-COLUMNS = ["On", "Order", "Rule", "What it does", "Wait"]
+COLUMNS = ["On", "Order", "Rule", "Group", "What it does", "Wait"]
 
 
 class RulesTab(QWidget):
@@ -60,6 +61,10 @@ class RulesTab(QWidget):
             menu.addAction(action)
         self.add_button.setMenu(menu)
         bar.addWidget(self.add_button)
+        self.groups_button = QPushButton("Groups...")
+        self.groups_button.setToolTip("When one rule in a group is found, the whole group stops being checked")
+        self.groups_button.clicked.connect(self.edit_groups)
+        bar.addWidget(self.groups_button)
         self.share_button = QPushButton("Share")
         share = QMenu(self.share_button)
         for label, slot in (
@@ -90,9 +95,9 @@ class RulesTab(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         header = self.table.horizontalHeader()
-        for col in (0, 1, 2, 4):
+        for col in (0, 1, 2, 3, 5):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self._item_changed)
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_rule())
         v.addWidget(self.table, 1)
@@ -116,7 +121,8 @@ class RulesTab(QWidget):
             on.setCheckState(Qt.CheckState.Checked if rule.enabled else Qt.CheckState.Unchecked)
             on.setData(Qt.ItemDataRole.UserRole, rule.id)
             self.table.setItem(row, 0, on)
-            for col, text in enumerate((str(row + 1), rule.title(), rule.rule_summary(), f"{rule.delay_after_ms} ms"), start=1):
+            cells = (str(row + 1), rule.title(), macro.group_name(rule.group_id), rule.rule_summary(), f"{rule.delay_after_ms} ms")
+            for col, text in enumerate(cells, start=1):
                 item = QTableWidgetItem(text)
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 if not rule.enabled:
@@ -173,7 +179,7 @@ class RulesTab(QWidget):
         macro = self._get_macro()
         if macro is None:
             return
-        dialog = StepDialog(self.ctx, rule, self, is_new=is_new, rule=True)
+        dialog = StepDialog(self.ctx, rule, self, is_new=is_new, rule=True, groups=macro.groups)
         if dialog.exec() != StepDialog.DialogCode.Accepted:
             return
         updated = dialog.result_step()
@@ -230,6 +236,14 @@ class RulesTab(QWidget):
         self._save()
         self.refresh(select_id=rule.id)
 
+    def edit_groups(self) -> None:
+        macro = self._get_macro()
+        if macro is None:
+            return
+        GroupsDialog(macro, self).exec()
+        self._save()
+        self.refresh()
+
     # -- sharing
     def export_rules(self) -> None:
         macro = self._get_macro()
@@ -265,10 +279,12 @@ class RulesTab(QWidget):
         if not path:
             return
         try:
-            _name, rules = rulepack.read_pack(path, self.store.save_template_bytes, self.store.delete_template)
+            pack = rulepack.read_pack(path, self.store.save_template_bytes, self.store.delete_template)
+            rules = pack.rules
         except (rulepack.RulePackError, OSError) as e:
             QMessageBox.warning(self, "Ultrebo", str(e))
             return
+        macro.add_groups(pack.groups, rules)
         start = macro.next_rule_priority()
         for i, rule in enumerate(rules):
             rule.priority = start + i * 10

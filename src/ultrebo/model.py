@@ -59,6 +59,27 @@ class WatchAction(str, Enum):
 
 
 @dataclass
+class RuleGroup:
+    """Rules that share a group stop being checked together: once one of them is found, the rest rest too."""
+
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    name: str = "Group"
+    #: After one rule in the group is found, stop checking the whole group for this many seconds (0 = until the macro stops).
+    pause_s: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "pause_s": self.pause_s}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RuleGroup":
+        try:
+            pause = min(max(int(data.get("pause_s", 0)), 0), 86400)
+        except (TypeError, ValueError):
+            pause = 0
+        return cls(id=str(data.get("id") or uuid.uuid4().hex), name=str(data.get("name") or "Group")[:60], pause_s=pause)
+
+
+@dataclass
 class Step:
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     name: str = ""
@@ -96,6 +117,10 @@ class Step:
     #: Watch the screen in the background for the whole run.
     watch: bool = False
     on_seen: WatchAction = WatchAction.CONTINUE
+    #: Rules: glide the mouse to the target and wiggle it a little before clicking (some games need to see it move).
+    nudge: bool = True
+    #: Rules: which group the rule belongs to (a RuleGroup id), or None.
+    group_id: str | None = None
     #: Optional search area [x, y, width, height]; None = whole screen.
     region: list[int] | None = None
 
@@ -181,6 +206,31 @@ class Macro:
     #: Always-watching detections. They run in the background for the whole run; when several are on
     #: screen at once the one with the lowest priority number is handled first.
     rules: list[Step] = field(default_factory=list)
+    groups: list[RuleGroup] = field(default_factory=list)
+
+    def group_name(self, group_id: str | None) -> str:
+        group = next((g for g in self.groups if g.id == group_id), None)
+        return group.name if group else ""
+
+    def add_groups(self, groups: list[RuleGroup], rules: list[Step]) -> None:
+        """Bring in groups that came with imported rules. A group with a name you already have is reused."""
+        by_name = {g.name.lower(): g for g in self.groups}
+        remap: dict[str, str] = {}
+        for group in groups:
+            existing = by_name.get(group.name.lower())
+            if existing is None:
+                self.groups.append(group)
+                by_name[group.name.lower()] = group
+                existing = group
+            remap[group.id] = existing.id
+        for rule in rules:
+            rule.group_id = remap.get(rule.group_id) if rule.group_id else None
+
+    def delete_group(self, group_id: str) -> None:
+        self.groups = [g for g in self.groups if g.id != group_id]
+        for rule in self.rules:
+            if rule.group_id == group_id:
+                rule.group_id = None
 
     def ordered(self) -> list[Step]:
         """Steps in execution order: priority ascending, ties keep list order."""
@@ -229,6 +279,7 @@ class Macro:
             "scan_interval_ms": self.scan_interval_ms,
             "steps": [s.to_dict() for s in self.steps],
             "rules": [r.to_dict() for r in self.rules],
+            "groups": [g.to_dict() for g in self.groups],
         }
 
     @classmethod
@@ -247,8 +298,12 @@ class Macro:
             scan_interval_ms=int(data.get("scan_interval_ms", default.scan_interval_ms)),
             steps=[Step.from_dict(s) for s in data.get("steps", [])],
             rules=[Step.from_dict(r) for r in data.get("rules", [])],
+            groups=[RuleGroup.from_dict(g) for g in data.get("groups", []) if isinstance(g, dict)],
         )
+        known = {g.id for g in macro.groups}
         for rule in macro.rules:
             rule.watch = True
+            if rule.group_id not in known:
+                rule.group_id = None
         macro.migrate_watchers()
         return macro

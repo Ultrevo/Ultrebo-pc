@@ -380,12 +380,17 @@ class Runner:
     # -- watchers
     def _watch_loop(self, macro: Macro, watchers: list[Step], main_steps: list[Step], stop: Cancel) -> None:
         last_seen: dict[str, float] = {}
+        groups = {g.id: g for g in macro.groups}
+        resting: dict[str, float] = {}  # group id -> when it starts being checked again
         try:
             while not stop.wait(self._scan_s):
+                now = time.monotonic()
+                active = [w for w in watchers if resting.get(w.group_id or "", 0.0) <= now]
+                if not active:
+                    continue  # every group is resting: nothing to look for
                 frame = self.finder.capture()
                 hit: tuple[Step, Target] | None = None
-                now = time.monotonic()
-                for w in watchers:
+                for w in active:
                     if now - last_seen.get(w.id, -1e9) < WATCH_COOLDOWN_S:
                         continue
                     target = self.finder.find(frame, w)
@@ -401,7 +406,7 @@ class Runner:
                     return
                 try:
                     if step.click_on_found:
-                        self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks)
+                        self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks, nudge=step.nudge)
                     if restart and self._main is not None:
                         self._main.cancel.set()
                         self._main.thread.join(timeout=5)
@@ -411,6 +416,10 @@ class Runner:
                 if restart and not stop.is_set():
                     self._main = self._spawn_main(macro, main_steps, stop)
                 last_seen[step.id] = time.monotonic()
+                group = groups.get(step.group_id or "")
+                if group is not None:
+                    resting[group.id] = last_seen[step.id] + group.pause_s if group.pause_s > 0 else float("inf")
+                    self._on_status(f"Group {group.name}: found, so the group stops looking")
         except Exception as e:  # noqa: BLE001
             self._on_error(str(e))
             stop.set()
@@ -447,4 +456,5 @@ class Runner:
         elif t is StepType.KEY:
             self.input.press_keys(step.keys, step.hold_ms)
         elif target is not None:
-            self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks)
+            # A rule's Test button goes through here too, so it moves the mouse the same way the real rule does.
+            self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks, nudge=step.watch and step.nudge)

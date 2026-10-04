@@ -15,13 +15,15 @@ class FakeInput:
 
     def __init__(self):
         self.calls = []
+        self.nudged = []  # one entry per click: whether the mouse was asked to glide and wiggle first
         self._lock = threading.Lock()
 
     def _log(self, *call):
         with self._lock:
             self.calls.append((time.monotonic(), *call))
 
-    def click(self, x, y, button="left", hold_ms=60, clicks=1):
+    def click(self, x, y, button="left", hold_ms=60, clicks=1, nudge=False):
+        self.nudged.append(nudge)
         self._log("click", x, y, button, clicks)
         time.sleep(0.005)
 

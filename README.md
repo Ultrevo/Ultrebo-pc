@@ -96,6 +96,18 @@ You can have as many rules as you like in one macro. **If two rules are on scree
 is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
 A macro with only rules just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
 
+#### Mouse wiggle
+
+Some games, such as Roblox, only notice the mouse when they see it move, not when the cursor is placed straight onto a spot. So when a rule clicks, Ultrebo
+glides the mouse to the target and wiggles it very slightly first. It's on by default; untick **Move the mouse a little before clicking** in a rule if you don't
+want it.
+
+#### Groups
+
+If several rules are really the same thing, such as three pictures of one pop-up, put them in a **group** (**Groups...** on the Rules tab, then pick the group in each
+rule). As soon as one rule in a group is found, the whole group stops being checked. By default that lasts until the macro stops; set a number of seconds
+for a pop-up that comes back now and then, and the group starts looking again after that long. Rules with no group are unaffected. Groups are shared along with the rules.
+
 #### Sharing rules with other players
 
 Set your rules up once, then share them: on the **Rules** tab click **Share > Export these rules to a file**. That makes one

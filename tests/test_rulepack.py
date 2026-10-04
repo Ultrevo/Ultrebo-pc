@@ -51,8 +51,8 @@ def test_export_then_import_keeps_everything_but_ids_and_search_area(store, othe
     macro = macro_with_rules(store)
     path = tmp_path / f"farm{rulepack.EXTENSION}"
     assert rulepack.export_pack(macro, store.templates_dir, path) == 2
-    name, rules = read(path, other)
-    assert name == "Tower farm"
+    name, rules, groups = read(path, other)
+    assert name == "Tower farm" and groups == []
     assert [r.name for r in rules] == ["Claim", "AFK"]  # exported in priority order
     claim, afk = rules
     assert (afk.text, afk.on_seen, afk.delay_after_ms, afk.threshold, afk.watch) == ("I'm here", WatchAction.RESTART, 900, 0.7, True)
@@ -145,7 +145,7 @@ def test_hostile_numbers_and_fields_are_cleaned(other, tmp_path):
         watch=False,
     )
     path = make_pack(tmp_path / "p.zip", {"format": 1, "rules": [rule]})
-    _, [r] = read(path, other)
+    _, [r], _groups = read(path, other)
     assert (r.threshold, r.delay_after_ms, r.hold_ms, r.clicks, r.button, r.repeat) == (1.0, 0, 5000, 1, "left", 1)
     assert r.enabled is False and r.on_seen is WatchAction.CONTINUE and r.watch is True
     assert r.id != "steal-this" and r.template_file is None and r.region is None and len(r.name) == 80
@@ -156,8 +156,8 @@ def test_a_pack_made_on_a_phone_is_explained(other, tmp_path):
     with pytest.raises(RulePackError, match="phone version"):
         read(path, other)
     # packs without a platform (older ones) and desktop packs are fine
-    assert read(make_pack(tmp_path / "q.zip", {"format": 1, "rules": [text_rule()]}), other)[1]
-    assert read(make_pack(tmp_path / "r.zip", {"format": 1, "platform": "desktop", "rules": [text_rule()]}), other)[1]
+    assert read(make_pack(tmp_path / "q.zip", {"format": 1, "rules": [text_rule()]}), other).rules
+    assert read(make_pack(tmp_path / "r.zip", {"format": 1, "platform": "desktop", "rules": [text_rule()]}), other).rules
 
 
 def test_exported_packs_say_where_they_came_from(store, tmp_path):
@@ -165,3 +165,39 @@ def test_exported_packs_say_where_they_came_from(store, tmp_path):
     rulepack.export_pack(macro_with_rules(store), store.templates_dir, path)
     with zipfile.ZipFile(path) as z:
         assert json.loads(z.read("rules.json"))["platform"] == "desktop"
+
+
+def test_groups_travel_with_the_rules_and_merge_by_name(store, other, tmp_path):
+    from ultrebo.model import RuleGroup
+
+    pop = RuleGroup(name="Pop-ups", pause_s=30)
+    unused = RuleGroup(name="Not used")
+    macro = Macro(name="m", groups=[pop, unused], rules=[
+        Step(type=StepType.TEXT, text="a", watch=True, priority=10, group_id=pop.id),
+        Step(type=StepType.TEXT, text="b", watch=True, priority=20, group_id=pop.id),
+        Step(type=StepType.TEXT, text="c", watch=True, priority=30),
+    ])
+    path = tmp_path / "g.ultrebo-rules"
+    rulepack.export_pack(macro, store.templates_dir, path)
+    with zipfile.ZipFile(path) as z:
+        assert json.loads(z.read("rules.json"))["groups"] == [{"name": "Pop-ups", "pause_s": 30}]  # only groups in use
+    _, rules, groups = read(path, other)
+    assert [g.name for g in groups] == ["Pop-ups"] and groups[0].pause_s == 30
+    assert [r.group_id for r in rules] == [groups[0].id, groups[0].id, None]
+
+    mine = Macro(groups=[RuleGroup(name="pop-ups", pause_s=5)])  # same name, different case: reused
+    mine.add_groups(groups, rules)
+    assert len(mine.groups) == 1 and mine.groups[0].pause_s == 5
+    assert [r.group_id for r in rules] == [mine.groups[0].id, mine.groups[0].id, None]
+    empty = Macro()
+    _, rules2, groups2 = read(path, other)
+    empty.add_groups(groups2, rules2)
+    assert [g.name for g in empty.groups] == ["Pop-ups"] and rules2[0].group_id == empty.groups[0].id
+
+
+def test_junk_groups_in_a_pack_are_ignored(other, tmp_path):
+    manifest = {"format": 1, "groups": [{"name": "  "}, "x", {"name": "Real", "pause_s": -4}], "rules": [
+        text_rule(group="Real"), text_rule(group="Missing"), text_rule()]}
+    _, rules, groups = read(make_pack(tmp_path / "p.zip", manifest), other)
+    assert [g.name for g in groups] == ["Real"] and groups[0].pause_s == 0
+    assert [bool(r.group_id) for r in rules] == [True, False, False]

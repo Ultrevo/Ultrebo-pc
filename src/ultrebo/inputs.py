@@ -67,8 +67,15 @@ def validate_key_spec(spec: str) -> str | None:
     return None
 
 
+GLIDE_STEPS = 8
+#: Offsets (pixels) of the little wiggle before a nudged click; it always ends exactly on the target.
+WIGGLE = ((3, 2), (-3, -2), (2, -1), (0, 0))
+
+
 class InputBackend(Protocol):
-    def click(self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1) -> None: ...
+    def click(
+        self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1, nudge: bool = False
+    ) -> None: ...
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, button: str = "left", duration_ms: int = 300) -> None: ...
 
@@ -95,9 +102,34 @@ class PynputInput:
             "middle": self._mouse.Button.middle,
         }.get(name, self._mouse.Button.left)
 
-    def click(self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1) -> None:
-        self._mouse_ctl.position = (x, y)
-        time.sleep(0.01)
+    def _approach(self, x: int, y: int) -> None:
+        """Glide to (x, y) and give the mouse a tiny wiggle on arrival.
+
+        Some games (Roblox, for one) only notice the mouse when they see it move, not when the cursor is
+        placed straight on a spot, so a click right after a teleport can land on nothing.
+        """
+        ctl = self._mouse_ctl
+        try:
+            sx, sy = ctl.position
+        except Exception:  # noqa: BLE001
+            sx, sy = x, y
+        for i in range(1, GLIDE_STEPS + 1):
+            t = i / GLIDE_STEPS
+            ctl.position = (round(sx + (x - sx) * t), round(sy + (y - sy) * t))
+            time.sleep(0.008)
+        for dx, dy in WIGGLE:
+            ctl.position = (x + dx, y + dy)
+            time.sleep(0.012)
+        time.sleep(0.02)
+
+    def click(
+        self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1, nudge: bool = False
+    ) -> None:
+        if nudge:
+            self._approach(x, y)
+        else:
+            self._mouse_ctl.position = (x, y)
+            time.sleep(0.01)
         b = self._button(button)
         for i in range(max(1, clicks)):
             self._mouse_ctl.press(b)

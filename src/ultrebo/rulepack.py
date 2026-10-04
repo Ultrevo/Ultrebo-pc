@@ -8,17 +8,17 @@ sizes, re-encodes every picture, and clamps every number.
 """
 from __future__ import annotations
 
-import io
 import json
+import uuid
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple
 
 import cv2
 import numpy as np
 
 from . import __version__
-from .model import Macro, Step, StepType, WatchAction
+from .model import Macro, RuleGroup, Step, StepType, WatchAction
 
 EXTENSION = ".ultrebo-rules"
 FORMAT = 1
@@ -28,6 +28,12 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_JSON_BYTES = 512 * 1024
 MAX_IMAGE_SIDE = 4000
 BUTTONS = {"left", "right", "middle"}
+
+
+class Pack(NamedTuple):
+    name: str
+    rules: list[Step]
+    groups: list[RuleGroup]  # new groups; each rule's group_id points at one of them
 
 
 class RulePackError(Exception):
@@ -43,8 +49,10 @@ def export_pack(macro: Macro, templates_dir: Path, path: Path, name: str | None 
     images: dict[str, bytes] = {}
     for rule in rules:
         data = rule.to_dict()
-        for key in ("id", "priority", "region", "template_file"):
+        for key in ("id", "priority", "region", "template_file", "group_id"):
             data.pop(key, None)  # ids are new on import; the search area belongs to this screen only
+        if rule.group_id and macro.group_name(rule.group_id):
+            data["group"] = macro.group_name(rule.group_id)
         if rule.is_image:
             if not rule.template_file:
                 raise RulePackError(f'The rule "{rule.title()}" has no image picked.')
@@ -56,7 +64,12 @@ def export_pack(macro: Macro, templates_dir: Path, path: Path, name: str | None 
             images[member] = png
             data["image"] = member
         entries.append(data)
-    manifest = {"format": FORMAT, "platform": PLATFORM, "app_version": __version__, "name": name or macro.name, "rules": entries}
+    used = {r.group_id for r in rules if r.group_id}
+    groups = [{"name": g.name, "pause_s": g.pause_s} for g in macro.groups if g.id in used]
+    manifest = {
+        "format": FORMAT, "platform": PLATFORM, "app_version": __version__, "name": name or macro.name,
+        "groups": groups, "rules": entries,
+    }
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("rules.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         for member, png in images.items():
@@ -101,10 +114,10 @@ def _clean_png(data: bytes) -> bytes:
 
 def read_pack(
     path: Path, save_template: Callable[[bytes], str], delete_template: Callable[[str], None]
-) -> tuple[str, list[Step]]:
+) -> Pack:
     """Read a pack. `save_template(png_bytes)` stores a picture and returns its file name.
 
-    Returns (pack name, rules). Nothing is saved unless the whole pack is valid, and pictures saved
+    Returns the pack's name, rules and groups. Nothing is saved unless the whole pack is valid, and pictures saved
     before a failure are removed again with `delete_template`.
     """
     try:
@@ -129,6 +142,13 @@ def read_pack(
         if len(raw) > MAX_RULES:
             raise RulePackError(f"This rule pack has too many rules (the limit is {MAX_RULES}).")
 
+        groups: dict[str, RuleGroup] = {}
+        raw_groups = manifest.get("groups", [])
+        for item in raw_groups if isinstance(raw_groups, list) else []:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                group = RuleGroup.from_dict({"name": str(item["name"]).strip(), "pause_s": item.get("pause_s", 0)})
+                group.id = uuid.uuid4().hex
+                groups.setdefault(group.name.lower(), group)
         rules: list[Step] = []
         pictures: list[bytes | None] = []
         for item in raw:
@@ -137,8 +157,11 @@ def read_pack(
             kind = item.get("type")
             if kind not in (StepType.IMAGE.value, StepType.TEXT.value):
                 raise RulePackError("Rule packs can only contain picture and text rules.")
-            rule = Step.from_dict({k: v for k, v in item.items() if k not in ("id", "template_file", "region")})
+            rule = Step.from_dict({k: v for k, v in item.items() if k not in ("id", "template_file", "region", "group_id")})
             rule.watch = True
+            rule.nudge = bool(rule.nudge)
+            found = groups.get(str(item.get("group") or "").strip().lower()) if item.get("group") else None
+            rule.group_id = found.id if found else None
             rule.name = str(rule.name)[:80]
             rule.text = str(rule.text).strip()[:200]
             rule.threshold = _clamp(rule.threshold, 0.1, 1.0, 0.8)
@@ -173,4 +196,5 @@ def read_pack(
             delete_template(file)
         raise
     name = str(manifest.get("name") or "").strip()[:80]
-    return name, rules
+    used = {r.group_id for r in rules if r.group_id}
+    return Pack(name, rules, [g for g in groups.values() if g.id in used])

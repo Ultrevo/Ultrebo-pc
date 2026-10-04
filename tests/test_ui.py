@@ -141,7 +141,7 @@ def test_rules_tab_add_order_and_delete(window, monkeypatch):
     tab.move_rule(-1)
     assert [r.text for r in macro.ordered_rules()] == ["second", "first"]
     assert tab.table.item(0, 2).text() == "Find text"  # titles are listed in priority order
-    assert "second" in tab.table.item(0, 3).text()
+    assert "second" in tab.table.item(0, 4).text()
 
     tab.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
     assert macro.ordered_rules()[0].enabled is False
