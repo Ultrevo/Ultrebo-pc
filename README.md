@@ -68,8 +68,14 @@ Not packaged yet. It runs from source on X11 (see below); Wayland blocks the kin
 4. Press **F8** (or **Start**) to run the macro. Press **F8** again to stop. **F8** is your safety brake, so
    check it works before you leave a macro running.
 
-Tips: play in **windowed mode** on **one monitor**, and don't move or resize the game window between recording and running,
+Tips: play in **windowed mode**, and don't move or resize the game window between recording and running,
 because clicks are recorded as screen positions.
+
+### Several monitors
+
+Image and text steps watch one monitor at a time. Choose it in **Settings > Monitor to watch** (use **Show numbers** to see which
+is which). *Pick image from screen* shows that monitor too. Clicks and drags use the exact screen position you recorded, so keep
+your game on the monitor you chose, and re-record if you move it.
 
 ### Find image and Find text
 

@@ -114,7 +114,9 @@ def main() -> int:
         return 1
 
     store = MacroStore(data_dir())
-    window, bridge = build_window(store, MssScreen(), input_backend, RapidOcrEngine(), HotkeyManager())
+    screen = MssScreen()
+    screen.set_monitor(store.settings.monitor)
+    window, bridge = build_window(store, screen, input_backend, RapidOcrEngine(), HotkeyManager())
     window.show()
 
     if store.settings.check_updates:

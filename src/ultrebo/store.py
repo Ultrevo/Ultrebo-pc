@@ -20,6 +20,8 @@ class Settings:
     start_stop_hotkey: str = "f8"
     record_hotkey: str = "f9"
     active_macro_id: str | None = None
+    #: Which monitor image and text steps watch (1, 2, ...).
+    monitor: int = 1
     #: Not used for anything yet; keeps unknown keys from older/newer versions when saving.
     extra: dict = field(default_factory=dict)
 
@@ -30,17 +32,22 @@ class Settings:
             start_stop_hotkey=self.start_stop_hotkey,
             record_hotkey=self.record_hotkey,
             active_macro_id=self.active_macro_id,
+            monitor=self.monitor,
         )
         return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
-        known = {"check_updates", "start_stop_hotkey", "record_hotkey", "active_macro_id"}
+        known = {"check_updates", "start_stop_hotkey", "record_hotkey", "active_macro_id", "monitor"}
         s = cls()
         s.check_updates = bool(data.get("check_updates", s.check_updates))
         s.start_stop_hotkey = str(data.get("start_stop_hotkey", s.start_stop_hotkey))
         s.record_hotkey = str(data.get("record_hotkey", s.record_hotkey))
         s.active_macro_id = data.get("active_macro_id")
+        try:
+            s.monitor = max(int(data.get("monitor", s.monitor)), 1)
+        except (TypeError, ValueError):
+            pass
         s.extra = {k: v for k, v in data.items() if k not in known}
         return s
 

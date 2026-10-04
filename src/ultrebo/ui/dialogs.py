@@ -6,13 +6,14 @@ from __future__ import annotations
 import webbrowser
 
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
 )
 
 from .. import DISCORD, DONATE_ETH, REPO, WEBSITE, __version__
 from ..inputs import validate_key_spec
 from ..store import Settings
+from .monitor_view import MonitorIdentifier
 
 
 def _label(text: str, muted: bool = False) -> QLabel:
@@ -72,11 +73,13 @@ class AboutDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, parent: QWidget | None = None):
+    def __init__(self, settings: Settings, parent: QWidget | None = None, screen=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(460)
         self._settings = settings
+        self._monitors = screen.list_monitors() if screen is not None and hasattr(screen, "list_monitors") else []
+        self._identifier = MonitorIdentifier()
         v = QVBoxLayout(self)
         form = QFormLayout()
         self.start_key = QLineEdit(settings.start_stop_hotkey)
@@ -88,6 +91,28 @@ class SettingsDialog(QDialog):
             "These hotkeys work even while a game has focus, and are not recorded. Examples: f8, ctrl+f9. "
             "Use keys the game doesn't need.", muted=True,
         ))
+        if self._monitors:
+            self.monitor_box = QComboBox()
+            for m in self._monitors:
+                self.monitor_box.addItem(f"Monitor {m.index}  ({m.width} x {m.height})", m.index)
+            at = self.monitor_box.findData(settings.monitor)
+            self.monitor_box.setCurrentIndex(at if at >= 0 else 0)
+            row = QHBoxLayout()
+            row.addWidget(self.monitor_box, 1)
+            identify = QPushButton("Show numbers")
+            identify.setToolTip("Shows each monitor's number on that monitor for a moment")
+            identify.clicked.connect(lambda: self._identifier.show(self._monitors))
+            row.addWidget(identify)
+            holder = QWidget()
+            holder.setLayout(row)
+            row.setContentsMargins(0, 0, 0, 0)
+            form.addRow("Monitor to watch", holder)
+            v.addWidget(_label(
+                "Image and text steps look for things on this monitor, and \"pick from screen\" shows it. "
+                "Clicks use the screen position you recorded, so keep the game on this monitor.", muted=True,
+            ))
+        else:
+            self.monitor_box = None
         self.updates = QCheckBox("Check for updates on launch")
         self.updates.setChecked(settings.check_updates)
         v.addWidget(self.updates)
@@ -96,6 +121,10 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         v.addWidget(buttons)
+
+    def done(self, result: int) -> None:
+        self._identifier.clear()
+        super().done(result)
 
     def _save(self) -> None:
         start, record = self.start_key.text().strip(), self.record_key.text().strip()
@@ -110,4 +139,7 @@ class SettingsDialog(QDialog):
         self._settings.start_stop_hotkey = start.lower()
         self._settings.record_hotkey = record.lower()
         self._settings.check_updates = self.updates.isChecked()
+        if self.monitor_box is not None:
+            self._settings.monitor = int(self.monitor_box.currentData())
+        self._identifier.clear()
         self.accept()

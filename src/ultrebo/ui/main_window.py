@@ -634,10 +634,11 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Hotkeys unavailable: {e}")
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self.store.settings, self)
+        dialog = SettingsDialog(self.store.settings, self, self.ctx.screen)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             self.store.save_settings()
             self._apply_hotkeys()
+            self.ctx.apply_monitor(self.store.settings.monitor)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.ctx.runner.stop()

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QWidget
 from ..runner import Runner
 from ..screen import ScreenSource
 from ..store import MacroStore
+from .monitor_view import qt_screen_for
 from .picker import PickerOverlay
 
 
@@ -23,6 +24,12 @@ class AppContext:
     screen: ScreenSource
     runner: Runner
     _overlays: list = field(default_factory=list)
+
+    # -- monitor
+    def apply_monitor(self, number: int) -> None:
+        """Make image/text steps (and the picker) use monitor `number`, if the screen source supports choosing."""
+        if hasattr(self.screen, "set_monitor"):
+            self.screen.set_monitor(number)
 
     # -- templates
     def save_template(self, frame: np.ndarray, x: int, y: int, w: int, h: int) -> str | None:
@@ -84,6 +91,11 @@ class AppContext:
                 lambda px, py: finish(lambda: on_point and on_point(*self.screen.to_input(px, py)))
             )
             overlay.cancelled.connect(lambda: finish(None))
+            if hasattr(self.screen, "list_monitors"):
+                target = qt_screen_for(self.screen.list_monitors(), self.screen.monitor_index)
+                if target is not None:
+                    overlay.setScreen(target)
+                    overlay.setGeometry(target.geometry())
             overlay.showFullScreen()
             overlay.activateWindow()
             overlay.raise_()
