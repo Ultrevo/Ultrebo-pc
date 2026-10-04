@@ -107,3 +107,11 @@ def wait_until(predicate, timeout=5.0, interval=0.01):
             return True
         time.sleep(interval)
     return predicate()
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """The one QApplication for the whole test run. A second one created after the first is gone crashes Qt at exit."""
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])

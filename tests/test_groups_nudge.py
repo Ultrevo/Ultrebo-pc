@@ -173,11 +173,6 @@ def test_groups_survive_saving_and_stale_group_ids_are_dropped():
 
 # ------------------------------------------------------------------------------------------- UI
 
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
-
-
 def test_rule_dialog_offers_the_group_and_wiggle_choices(qapp, tmp_path):
     from ultrebo.store import MacroStore
     from ultrebo.ui.context import AppContext

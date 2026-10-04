@@ -19,11 +19,9 @@ from ultrebo.ui.step_dialog import StepDialog
 from ultrebo.ui.theme import apply_theme
 
 
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    apply_theme(app)
-    return app
+@pytest.fixture(scope="session", autouse=True)
+def _theme(qapp):
+    apply_theme(qapp)
 
 
 @pytest.fixture

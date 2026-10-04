@@ -69,11 +69,6 @@ def test_settings_remember_monitor_and_ignore_junk():
     assert Settings.from_dict({}).monitor == 1
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
-
-
 def test_settings_dialog_saves_monitor(qapp):
     settings = Settings()
     dialog = SettingsDialog(settings, None, _screen())
