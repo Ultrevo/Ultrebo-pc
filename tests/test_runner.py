@@ -3,6 +3,9 @@
 import threading
 import time
 
+import cv2
+import numpy as np
+
 import pytest
 
 from conftest import FakeInput, FakeOcr, FakeScreen, wait_until, with_pattern
@@ -237,6 +240,51 @@ def test_watchers_only_macro_keeps_running_until_stopped(templates_dir, blank):
     assert r.running
     r.stop()
     assert not r.running
+
+
+def two_rules(templates_dir, pattern, first_priority, second_priority):
+    """Two rules that look for different pictures, which are both on screen in the tests below."""
+    other = np.flip(pattern, axis=0).copy()
+    cv2.imwrite(str(templates_dir / "other.png"), other)
+    a = Step(type=StepType.IMAGE, template_file="button.png", watch=True, priority=first_priority, delay_after_ms=50, name="A")
+    b = Step(type=StepType.IMAGE, template_file="other.png", watch=True, priority=second_priority, delay_after_ms=50, name="B")
+    return a, b, other
+
+
+def test_rule_with_the_lower_priority_number_goes_first_when_two_are_on_screen(templates_dir, blank, pattern):
+    a, b, other = two_rules(templates_dir, pattern, first_priority=20, second_priority=10)  # B outranks A
+    frame = with_pattern(with_pattern(blank, pattern, 200, 120), other, 40, 40)
+    r, inp, *_ = make_runner(templates_dir, lambda: frame)
+    r.start(Macro(loops=0, scan_interval_ms=100, rules=[a, b]))  # listed A first: priority decides, not list order
+    assert wait_until(lambda: len(inp.clicks()) >= 1)
+    r.stop()
+    x, y = inp.clicks()[0][1:]
+    assert abs(x - 70) <= 3 and abs(y - 60) <= 3  # B's picture sits at (40, 40), 60x40 in size
+
+
+def test_a_lower_priority_rule_still_runs_after_the_higher_one(templates_dir, blank, pattern):
+    a, b, other = two_rules(templates_dir, pattern, first_priority=10, second_priority=20)
+    frame = with_pattern(with_pattern(blank, pattern, 200, 120), other, 40, 40)
+    r, inp, *_ = make_runner(templates_dir, lambda: frame)
+    r.start(Macro(loops=0, scan_interval_ms=100, rules=[b, a]))
+    assert wait_until(lambda: len(inp.clicks()) >= 2, timeout=4)
+    r.stop()
+    first, second = inp.clicks()[0][1:], inp.clicks()[1][1:]
+    assert abs(first[0] - 230) <= 3 and abs(second[0] - 70) <= 3  # A (priority 10) first, then B
+
+
+def test_disabled_rules_are_ignored_and_rules_are_validated(templates_dir, blank, pattern):
+    a, b, _ = two_rules(templates_dir, pattern, 10, 20)
+    frame = with_pattern(blank, pattern)
+    r, inp, *_ = make_runner(templates_dir, lambda: frame)
+    a.enabled = False
+    b.enabled = False
+    assert "no enabled steps or rules" in r.validate(Macro(rules=[a, b]))
+    bad = Step(type=StepType.IMAGE, watch=True, name="Pop-up")
+    assert 'rule "Pop-up" has no image' in r.validate(Macro(rules=[bad]))
+    assert 'rule "Go" must look for an image or text' in r.validate(Macro(rules=[Step(type=StepType.CLICK, name="Go")]))
+    a.enabled = True
+    assert r.validate(Macro(rules=[a])) is None  # a rules-only macro is fine
 
 
 def test_test_step_runs_once_and_reports_state(tmp_path):

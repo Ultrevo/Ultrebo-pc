@@ -25,15 +25,45 @@ def test_macro_survives_json_round_trip():
     macro = Macro(
         name="Farm", mode=RunMode.REACTIVE, loops=3, scan_interval_ms=2500,
         steps=[
-            Step(type=StepType.IMAGE, template_file="x.png", threshold=0.9, watch=True,
-                 on_seen=WatchAction.RESTART, region=[1, 2, 30, 40]),
             Step(type=StepType.KEY, keys="ctrl+shift+s"),
             Step(type=StepType.DRAG, x=1, y=2, x2=3, y2=4),
+        ],
+        rules=[
+            Step(type=StepType.IMAGE, template_file="x.png", threshold=0.9, watch=True,
+                 on_seen=WatchAction.RESTART, region=[1, 2, 30, 40], priority=20),
+            Step(type=StepType.TEXT, text="I'm here", watch=True, priority=10),
         ],
     )
     again = Macro.from_dict(json.loads(json.dumps(macro.to_dict())))
     assert again.to_dict() == macro.to_dict()
-    assert again.steps[0].on_seen is WatchAction.RESTART
+    assert again.rules[0].on_seen is WatchAction.RESTART
+    assert [r.text for r in again.ordered_rules()][0] == "I'm here"  # priority 10 comes before 20
+
+
+def test_old_always_watching_steps_become_rules():
+    old = {
+        "name": "Old",
+        "steps": [
+            {"type": "click", "x": 1, "y": 1, "priority": 5},
+            {"type": "text", "text": "I'm here", "watch": True, "on_seen": "restart", "priority": 20},
+            {"type": "image", "template_file": "a.png", "watch": True, "priority": 10},
+        ],
+    }
+    macro = Macro.from_dict(old)
+    assert [s.type for s in macro.steps] == [StepType.CLICK]
+    assert [r.title() for r in macro.ordered_rules()] == ["Find image", "Find text"]
+    assert all(r.watch for r in macro.rules)
+    assert Macro.from_dict(macro.to_dict()).to_dict() == macro.to_dict()  # stable once migrated
+
+
+def test_rule_priorities_and_summary():
+    macro = Macro(rules=[Step(type=StepType.TEXT, text="a", priority=30), Step(type=StepType.TEXT, text="b", priority=5)])
+    assert macro.next_rule_priority() == 40
+    macro.renumber_rules(macro.ordered_rules())
+    assert [(r.text, r.priority) for r in macro.rules] == [("b", 10), ("a", 20)]
+    rule = Step(type=StepType.TEXT, text="I'm here", on_seen=WatchAction.RESTART)
+    assert rule.rule_summary() == 'When "I\'m here" appears: click it, then ' + WatchAction.RESTART.label.lower()
+    assert Step(type=StepType.IMAGE).rule_summary() == "no image picked"
 
 
 def test_old_or_partial_files_still_load():

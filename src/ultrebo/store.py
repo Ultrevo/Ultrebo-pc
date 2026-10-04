@@ -91,7 +91,7 @@ class MacroStore:
         with self._lock:
             macro = self.get(macro_id)
             if macro is not None:
-                for step in macro.steps:
+                for step in [*macro.steps, *macro.rules]:
                     if step.template_file:
                         self.delete_template(step.template_file)
             self.macros = [m for m in self.macros if m.id != macro_id]

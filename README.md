@@ -14,8 +14,8 @@ tasks such as tower-defense farming, and works with any program on Windows and m
 - **Two run modes.** *Sequence* runs everything in order, looped. *Reactive* runs only the highest-priority step whose condition is met.
 - **Find image.** Drag a box over your screen to pick a picture; Ultrebo clicks it whenever it appears.
 - **Find text.** Type words such as `I'm here`; Ultrebo reads the screen (offline) and clicks them when they show up.
-- **Pop-up watcher.** Steps marked *Always watching* check the screen in the background while your macro runs. When one
-  appears the macro can **pause and carry on**, or **restart from the first step**.
+- **Rules.** Always-watching detections that check the screen in the background while your macro runs. When one
+  appears the macro can **pause and carry on**, or **restart from the first step**. Several can run at once; the highest priority wins.
 - **Global hotkeys** that work while a game has focus: **F8** starts/stops, **F9** records (changeable in Settings).
 - **Private.** No accounts, no analytics. Macros and screenshots stay on your computer. The only network use is an
   optional check on GitHub for a newer version.
@@ -87,15 +87,19 @@ your game on the monitor you chose, and re-record if you move it.
 - **Search area:** for either, you can pick a smaller area of the screen to search. It's faster and more accurate.
 - **Click it when found** can be switched off to make a step that only *waits* for something to appear.
 
-### Pop-up watcher
+### Rules (pop-up watcher)
 
-Turn on **Always watching** for an image or text step. It checks the screen in the background for the whole run, even
-while your other steps are busy. When its target appears:
+Open a macro's **Rules** tab to make always-watching detections. A rule looks for an image or for words and checks the screen
+in the background for the whole run, even while your steps are busy. When its target appears:
 
-- **Pause, then carry on:** the main macro pauses between actions, the watcher clicks the target, waits the time you set, and the macro continues.
-- **Restart macro from the start:** the macro stops, the watcher (optionally) clicks, waits, then the macro starts again from step 1.
+- **Pause, then carry on:** the main macro pauses between actions, the rule clicks the target (if you left that on), waits the time you set, and the macro continues.
+- **Restart macro from the start:** the macro stops, the rule (optionally) clicks, waits, then the macro starts again from step 1.
 
-A macro with only watchers just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
+You can have as many rules as you like in one macro. **If two rules are on screen at the same moment, the one nearer the top of the list
+(lower priority number) is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
+A macro with only rules just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
+
+Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.
 
 ## Troubleshooting
 

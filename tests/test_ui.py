@@ -43,8 +43,8 @@ def window(qapp, tmp_path, frame):
     win.close()
 
 
-def dialog_for(window, step):
-    return StepDialog(window.ctx, step, window, is_new=True)
+def dialog_for(window, step, rule=False):
+    return StepDialog(window.ctx, step, window, is_new=True, rule=rule)
 
 
 def test_empty_state_then_new_macro(window):
@@ -87,17 +87,80 @@ def test_each_kind_saves_its_fields(window):
     assert d.result_step().keys == "Ctrl+Shift+S"
 
 
-def test_text_step_with_watcher(window):
-    d = dialog_for(window, Step(type=StepType.TEXT))
+def test_text_rule(window):
+    d = dialog_for(window, Step(type=StepType.TEXT), rule=True)
     d.t_text.setText("I'm here")
     d.t_threshold.setValue(0.75)
-    d.watch.setChecked(True)
+    d.priority.setValue(15)
     d.on_seen.setCurrentIndex(d.on_seen.findData(WatchAction.RESTART.value))
     d.click_found.setChecked(False)
     d._accept()
     s = d.result_step()
-    assert (s.text, s.threshold, s.watch, s.click_on_found) == ("I'm here", 0.75, True, False)
+    assert (s.text, s.threshold, s.watch, s.click_on_found, s.priority) == ("I'm here", 0.75, True, False, 15)
     assert s.on_seen is WatchAction.RESTART and s.on_seen.label  # a real enum, not a string
+
+
+def test_plain_steps_never_watch_and_rules_only_offer_image_and_text(window):
+    d = dialog_for(window, Step(type=StepType.TEXT))
+    d.t_text.setText("hi")
+    d._accept()
+    assert d.result_step().watch is False
+    assert d.watch_group.isHidden()
+
+    rule = dialog_for(window, Step(type=StepType.CLICK), rule=True)  # a non image/text step opens as image
+    shown = [k for k, b in rule._kind_buttons.items() if not b.isHidden()]
+    assert shown == [StepType.IMAGE, StepType.TEXT]
+    assert rule.windowTitle() == "New rule"
+
+
+def test_rules_tab_add_order_and_delete(window, monkeypatch):
+    window.new_macro()
+    macro = window._macro()
+    tab = window.rules_tab
+
+    def add(text):
+        # the dialog is not shown in tests: fill it in the way the user would, via exec's replacement
+        original = StepDialog.exec
+
+        def fill(self):
+            self.t_text.setText(text)
+            self._accept()
+            return StepDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(StepDialog, "exec", fill)
+        tab.add_rule(StepType.TEXT)
+        monkeypatch.setattr(StepDialog, "exec", original)
+
+    add("first")
+    add("second")
+    assert [r.text for r in macro.ordered_rules()] == ["first", "second"]
+    assert all(r.watch for r in macro.rules) and macro.steps == []
+    assert tab.table.rowCount() == 2
+
+    tab.table.selectRow(1)
+    tab.move_rule(-1)
+    assert [r.text for r in macro.ordered_rules()] == ["second", "first"]
+    assert tab.table.item(0, 2).text() == "Find text"  # titles are listed in priority order
+    assert "second" in tab.table.item(0, 3).text()
+
+    tab.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    assert macro.ordered_rules()[0].enabled is False
+    tab.table.selectRow(0)
+    tab.delete_rule()
+    assert [r.text for r in macro.rules] == ["first"]
+    assert window.store.macros[0].rules[0].text == "first"  # saved
+
+
+def test_duplicate_macro_copies_rule_images(window, frame):
+    window.new_macro()
+    macro = window._macro()
+    name = window.ctx.save_template(frame, 10, 10, 50, 40)
+    macro.rules.append(Step(type=StepType.IMAGE, template_file=name, watch=True))
+    window.duplicate_macro()
+    copy_ = window._macro()
+    assert copy_.id != macro.id and len(copy_.rules) == 1
+    assert copy_.rules[0].template_file != name and window.store.template_path(copy_.rules[0].template_file).exists()
+    assert copy_.rules[0].id != macro.rules[0].id
 
 
 def test_dialog_refuses_incomplete_steps(window, monkeypatch):

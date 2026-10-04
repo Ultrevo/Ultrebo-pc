@@ -130,9 +130,17 @@ class Step:
         if self.is_text and not self.text.strip():
             return "no text entered"
         verb = "click" if self.click_on_found else "wait for"
-        if self.watch:
-            return f"always watching for {target}: {self.on_seen.label.lower()}"
         return f"{verb} {target}"
+
+    def rule_summary(self) -> str:
+        """How a rule reads in the Rules list: what it looks for, then what it does."""
+        target = "an image" if self.is_image else f'"{self.text}"'
+        if self.is_image and not self.template_file:
+            return "no image picked"
+        if self.is_text and not self.text.strip():
+            return "no text entered"
+        click = "click it, then " if self.click_on_found else ""
+        return f"When {target} appears: {click}{self.on_seen.label.lower()}"
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -170,6 +178,9 @@ class Macro:
     #: How often image/text steps look at the screen.
     scan_interval_ms: int = 1000
     steps: list[Step] = field(default_factory=list)
+    #: Always-watching detections. They run in the background for the whole run; when several are on
+    #: screen at once the one with the lowest priority number is handled first.
+    rules: list[Step] = field(default_factory=list)
 
     def ordered(self) -> list[Step]:
         """Steps in execution order: priority ascending, ties keep list order."""
@@ -185,6 +196,29 @@ class Macro:
             step.priority = (i + 1) * 10
         self.steps = list(ordered)
 
+    def ordered_rules(self) -> list[Step]:
+        """Rules in the order they win: priority ascending, ties keep list order."""
+        indexed = sorted(enumerate(self.rules), key=lambda p: (p[1].priority, p[0]))
+        return [r for _, r in indexed]
+
+    def next_rule_priority(self) -> int:
+        return (max((r.priority for r in self.rules), default=0)) + 10
+
+    def renumber_rules(self, ordered: list[Step]) -> None:
+        for i, rule in enumerate(ordered):
+            rule.priority = (i + 1) * 10
+        self.rules = list(ordered)
+
+    def migrate_watchers(self) -> None:
+        """Older macros marked image/text steps "always watching" inside the step list; those are rules now."""
+        moved = [s for s in self.steps if s.watch and s.is_finder]
+        if not moved:
+            return
+        self.steps = [s for s in self.steps if s not in moved]
+        for rule in moved:
+            rule.repeat = 1
+            self.rules.append(rule)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -194,6 +228,7 @@ class Macro:
             "loop_delay_ms": self.loop_delay_ms,
             "scan_interval_ms": self.scan_interval_ms,
             "steps": [s.to_dict() for s in self.steps],
+            "rules": [r.to_dict() for r in self.rules],
         }
 
     @classmethod
@@ -203,7 +238,7 @@ class Macro:
             mode = RunMode(data.get("mode", default.mode.value))
         except ValueError:
             mode = default.mode
-        return cls(
+        macro = cls(
             id=data.get("id") or uuid.uuid4().hex,
             name=data.get("name", default.name),
             mode=mode,
@@ -211,4 +246,9 @@ class Macro:
             loop_delay_ms=int(data.get("loop_delay_ms", default.loop_delay_ms)),
             scan_interval_ms=int(data.get("scan_interval_ms", default.scan_interval_ms)),
             steps=[Step.from_dict(s) for s in data.get("steps", [])],
+            rules=[Step.from_dict(r) for r in data.get("rules", [])],
         )
+        for rule in macro.rules:
+            rule.watch = True
+        macro.migrate_watchers()
+        return macro

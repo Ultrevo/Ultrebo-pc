@@ -23,6 +23,7 @@ from ..recorder import Recorder
 from ..updater import Update
 from .context import AppContext
 from .dialogs import AboutDialog, SettingsDialog
+from .rules_tab import RulesTab
 from .setup_guide import SetupCard
 from .step_dialog import StepDialog
 
@@ -142,6 +143,10 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         v.addWidget(self.tabs, 1)
         self.tabs.addTab(self._build_steps_tab(), "Steps")
+        self.rules_tab = RulesTab(
+            self.ctx, self._macro, self._test_step_object, self._refresh_list_item, self
+        )
+        self.tabs.addTab(self.rules_tab, "Rules")
         self.tabs.addTab(self._build_settings_tab(), "Settings")
         return w
 
@@ -231,8 +236,8 @@ class MainWindow(QMainWindow):
         form.addRow("Pause between loops", self.s_pause)
         form.addRow("Look at the screen every", self.s_scan)
         hint = QLabel(
-            "How often image and text steps check the screen. Higher is easier on the computer "
-            "(10000 = every 10 seconds). Reactive mode and always-watching steps keep checking until stopped."
+            "How often image and text steps and rules check the screen. Higher is easier on the computer "
+            "(10000 = every 10 seconds). Reactive mode and rules keep checking until stopped."
         )
         hint.setWordWrap(True)
         hint.setProperty("muted", True)
@@ -265,7 +270,7 @@ class MainWindow(QMainWindow):
         wanted = select or self.store.settings.active_macro_id
         row_to_select = 0
         for i, macro in enumerate(self.store.macros):
-            item = QListWidgetItem(f"{macro.name}\n{len(macro.steps)} steps - {macro.mode.label}")
+            item = QListWidgetItem(self._list_text(macro))
             item.setData(Qt.ItemDataRole.UserRole, macro.id)
             self.macro_list.addItem(item)
             if macro.id == wanted:
@@ -296,7 +301,7 @@ class MainWindow(QMainWindow):
         clone = Macro.from_dict(copy.deepcopy(macro.to_dict()))
         clone.id = uuid.uuid4().hex
         clone.name = f"{macro.name} copy"
-        for step in clone.steps:
+        for step in [*clone.steps, *clone.rules]:
             step.id = uuid.uuid4().hex
             if step.template_file:
                 new_name = self.store.new_template_name()
@@ -337,6 +342,7 @@ class MainWindow(QMainWindow):
         self.s_scan.setValue(macro.scan_interval_ms)
         self._loading = False
         self._fill_table()
+        self.rules_tab.refresh()
 
     def _fill_table(self, select_id: str | None = None) -> None:
         macro = self._macro()
@@ -369,11 +375,17 @@ class MainWindow(QMainWindow):
         )
         self._refresh_list_item()
 
+    @staticmethod
+    def _list_text(macro: Macro) -> str:
+        rules = f", {len(macro.rules)} rule{'s' if len(macro.rules) != 1 else ''}" if macro.rules else ""
+        steps = f"{len(macro.steps)} step{'s' if len(macro.steps) != 1 else ''}"
+        return f"{macro.name}\n{steps}{rules} - {macro.mode.label}"
+
     def _refresh_list_item(self) -> None:
         macro = self._macro()
         item = self.macro_list.currentItem()
         if macro is not None and item is not None:
-            item.setText(f"{macro.name}\n{len(macro.steps)} steps - {macro.mode.label}")
+            item.setText(self._list_text(macro))
 
     def _selected_step_id(self) -> str | None:
         rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
@@ -490,8 +502,10 @@ class MainWindow(QMainWindow):
 
     def test_step(self) -> None:
         step = self._selected_step()
-        if step is None:
-            return
+        if step is not None:
+            self._test_step_object(step)
+
+    def _test_step_object(self, step: Step) -> None:
         self._minimize_then(lambda: self._report(self.ctx.runner.test_step(step)))
 
     # --------------------------------------------------------- run and record

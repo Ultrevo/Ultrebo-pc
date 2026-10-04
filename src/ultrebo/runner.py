@@ -179,15 +179,24 @@ class Runner:
         return self._supervisor is not None and self._supervisor.is_alive()
 
     def validate(self, macro: Macro) -> str | None:
+        macro.migrate_watchers()
         enabled = [s for s in macro.steps if s.enabled]
-        if not enabled:
-            return "This macro has no enabled steps."
+        rules = [r for r in macro.rules if r.enabled]
+        if not enabled and not rules:
+            return "This macro has no enabled steps or rules."
         for s in enabled:
             if s.is_image and not s.template_file:
                 return f'The step "{s.title()}" has no image picked.'
             if s.is_text and not s.text.strip():
                 return f'The step "{s.title()}" has no text entered.'
-        if any(s.is_finder for s in enabled) and self.finder is None:
+        for r in rules:
+            if not r.is_finder:
+                return f'The rule "{r.title()}" must look for an image or text.'
+            if r.is_image and not r.template_file:
+                return f'The rule "{r.title()}" has no image picked.'
+            if r.is_text and not r.text.strip():
+                return f'The rule "{r.title()}" has no text entered.'
+        if (rules or any(s.is_finder for s in enabled)) and self.finder is None:
             return "Screen capture is not available."
         return None
 
@@ -243,9 +252,8 @@ class Runner:
 
     def _supervise(self, macro: Macro, stop: Cancel) -> None:
         try:
-            enabled = [s for s in macro.ordered() if s.enabled]
-            watchers = [s for s in enabled if s.is_finder and s.watch]
-            main_steps = [s for s in enabled if not (s.is_finder and s.watch)]
+            main_steps = [s for s in macro.ordered() if s.enabled]
+            watchers = [r for r in macro.ordered_rules() if r.enabled]  # first in this list wins when several show
 
             self._main = self._spawn_main(macro, main_steps, stop)
             watcher_thread = None

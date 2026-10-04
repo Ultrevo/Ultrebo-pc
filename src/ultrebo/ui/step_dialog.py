@@ -54,10 +54,12 @@ def muted(text: str) -> QLabel:
 
 
 class StepDialog(QDialog):
-    def __init__(self, ctx: AppContext, step: Step, parent: QWidget | None = None, is_new: bool = False):
+    def __init__(self, ctx: AppContext, step: Step, parent: QWidget | None = None, is_new: bool = False, rule: bool = False):
         super().__init__(parent)
         self.ctx = ctx
-        self.setWindowTitle("New step" if is_new else "Edit step")
+        self.rule = rule
+        noun = "rule" if rule else "step"
+        self.setWindowTitle(f"New {noun}" if is_new else f"Edit {noun}")
         self.setMinimumWidth(560)
         self._step = copy.deepcopy(step)
         self._template = step.template_file
@@ -77,7 +79,7 @@ class StepDialog(QDialog):
         self.name.setPlaceholderText("Name (optional)")
         layout.addWidget(self.name)
 
-        layout.addWidget(self._heading("What it does"))
+        layout.addWidget(self._heading("What it looks for" if rule else "What it does"))
         kinds = QHBoxLayout()
         self.kind_group = QButtonGroup(self)
         self.kind_group.setExclusive(True)
@@ -90,6 +92,9 @@ class StepDialog(QDialog):
             self._kind_buttons[kind] = b
             kinds.addWidget(b)
         layout.addLayout(kinds)
+        if rule:  # a rule only ever watches for an image or text
+            for kind, button in self._kind_buttons.items():
+                button.setVisible(kind in (StepType.IMAGE, StepType.TEXT))
         self.description = muted("")
         layout.addWidget(self.description)
 
@@ -129,13 +134,15 @@ class StepDialog(QDialog):
         fl.addWidget(QLabel("Search area"))
         fl.addLayout(area)
 
-        self.watch_group = QGroupBox("Pop-up watcher")
+        self.watch_group = QGroupBox("When it appears")
         wl = QVBoxLayout(self.watch_group)
-        self.watch = QCheckBox("Always watching")
+        self.watch = QCheckBox("Always watching")  # on for rules; a plain step never watches
+        self.watch.setChecked(rule)
+        self.watch.setVisible(False)
         wl.addWidget(self.watch)
         wl.addWidget(muted(
-            "Keeps checking in the background for the whole run, even while other steps are running. "
-            "Good for pop-ups like \"I'm here\"."
+            "Checked in the background for the whole run, even while the steps are running. If two rules "
+            "are on screen at once, the one with the lower priority number goes first."
         ))
         self.watch_options = QWidget()
         wo = QFormLayout(self.watch_options)
@@ -143,9 +150,10 @@ class StepDialog(QDialog):
         self.on_seen = QComboBox()
         for action in WatchAction:
             self.on_seen.addItem(action.label, action.value)
-        wo.addRow("When it appears", self.on_seen)
+        wo.addRow("Then", self.on_seen)
         wl.addWidget(self.watch_options)
         fl.addWidget(self.watch_group)
+        self.watch_group.setVisible(rule)
         layout.addWidget(self.finder_box)
 
         # -- timing
@@ -153,6 +161,9 @@ class StepDialog(QDialog):
         self.delay = spin(0, 3_600_000, step.delay_after_ms, " ms")
         self.delay_label = QLabel("Wait afterwards")
         timing.addRow(self.delay_label, self.delay)
+        self.priority = spin(-100000, 100000, step.priority)
+        if rule:
+            timing.addRow("Priority (low goes first)", self.priority)
         layout.addLayout(timing)
 
         # -- advanced
@@ -164,10 +175,10 @@ class StepDialog(QDialog):
         self.adv_body = QWidget()
         self.adv_form = QFormLayout(self.adv_body)
         self.adv_form.setContentsMargins(0, 0, 0, 0)
-        self.priority = spin(-100000, 100000, step.priority)
         self.repeat = spin(1, 10000, step.repeat)
         self.timeout = spin(0, 3_600_000, step.timeout_ms, " ms")
-        self.adv_form.addRow("Priority (low runs first)", self.priority)
+        if not rule:
+            self.adv_form.addRow("Priority (low runs first)", self.priority)
         self.adv_form.addRow("Repeat", self.repeat)
         self.adv_form.addRow("Look for up to (sequence mode)", self.timeout)
         self.adv_form.addRow(muted("Priority decides the order: 10 runs before 20. Equal numbers keep list order."))
@@ -182,7 +193,6 @@ class StepDialog(QDialog):
         root.addWidget(buttons)
 
         self.kind_group.idClicked.connect(self._kind_changed)
-        self.watch.toggled.connect(lambda _: self._refresh())
         self._load(step)
         self.resize(600, 700)
 
@@ -347,7 +357,7 @@ class StepDialog(QDialog):
     def _refresh(self) -> None:
         kind = self._kind()
         finder = kind in (StepType.IMAGE, StepType.TEXT)
-        watcher = finder and self.watch.isChecked()
+        watcher = finder and self.rule
         self.description.setText(DESCRIPTIONS[kind])
         self.finder_box.setVisible(finder)
         self.watch_options.setVisible(watcher)
@@ -365,7 +375,11 @@ class StepDialog(QDialog):
         self._update_thumb()
         self._set_row_visible(self.timeout, finder and not watcher)
         self._set_row_visible(self.repeat, not watcher)
-        self._set_row_visible(self.priority, not watcher)
+        if not self.rule:
+            self._set_row_visible(self.priority, True)
+        # A rule has no repeat or look-for-up-to time, so there is nothing left to hide behind "Advanced".
+        self.adv_toggle.setVisible(not self.rule)
+        self.adv_body.setVisible(self.adv_toggle.isChecked() and not self.rule)
 
     def _set_row_visible(self, widget: QWidget, visible: bool) -> None:
         label = self.adv_form.labelForField(widget)
@@ -434,7 +448,8 @@ class StepDialog(QDialog):
 
     # -- loading and saving
     def _load(self, s: Step) -> None:
-        index = [k for k, _ in KINDS].index(s.type)
+        kind = s.type if (not self.rule or s.is_finder) else StepType.IMAGE
+        index = [k for k, _ in KINDS].index(kind)
         self.kind_group.button(index).setChecked(True)
         self.pages.setCurrentIndex(index)
         # click
@@ -465,7 +480,6 @@ class StepDialog(QDialog):
         self.click_found.setChecked(s.click_on_found)
         self.f_button.setCurrentText(s.button if s.button in BUTTONS else "left")
         self.f_double.setChecked(s.clicks == 2)
-        self.watch.setChecked(s.watch)
         self.on_seen.setCurrentIndex(self.on_seen.findData(s.on_seen.value))
         self._refresh()
 
@@ -517,11 +531,11 @@ class StepDialog(QDialog):
             s.click_on_found = self.click_found.isChecked()
             s.button = self.f_button.currentText()
             s.clicks = 2 if self.f_double.isChecked() else 1
-            s.watch = self.watch.isChecked()
-            s.on_seen = WatchAction(self.on_seen.currentData())
-            s.region = list(self._region) if self._region else None
-            if s.watch:
+            s.watch = self.rule
+            if self.rule:
+                s.on_seen = WatchAction(self.on_seen.currentData())
                 s.repeat = 1
+            s.region = list(self._region) if self._region else None
         self.accept()
 
     def reject(self) -> None:
