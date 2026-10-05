@@ -41,7 +41,7 @@ jobs:
           pip install -e ".[dev]"
           pip uninstall -y opencv-python
           pip install --force-reinstall --no-deps opencv-python-headless
-      - name: Install PyInstaller (Windows: its small launcher program is compiled here, not downloaded)
+      - name: Install PyInstaller (Windows, with its launcher compiled here)
         if: runner.os == 'Windows'
         run: pip install --no-binary pyinstaller pyinstaller
       - name: Install PyInstaller
