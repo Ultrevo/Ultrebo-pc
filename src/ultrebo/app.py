@@ -86,7 +86,9 @@ def _selftest(say) -> int:
     text_ok = textmatch.find(lines, "I'm here", 0.7) is not None
     patch = bgr[60:160, 150:450].copy()
     image_ok = find_template(to_gray(bgr), to_gray(patch), 0.9) is not None
-    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} drawn={drawn} ocr={[[w.text for w in line] for line in lines]}")
+    from . import winmouse
+
+    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} drawn={drawn} ocr={[[w.text for w in line] for line in lines]} mouse={winmouse.probe()}")
     return 0 if (text_ok and image_ok and drawn > 500) else 1
 
 

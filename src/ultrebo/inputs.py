@@ -6,6 +6,8 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
+from . import winmouse
+
 MODIFIERS = ("ctrl", "shift", "alt", "cmd")
 
 # Names accepted in key specs, mapped to pynput's Key attribute names.
@@ -94,6 +96,18 @@ class PynputInput:
         self._mouse = mouse
         self._mouse_ctl = mouse.Controller()
         self._key_ctl = keyboard.Controller()
+        #: On Windows the pointer is moved with real mouse input; see winmouse.py for why that matters to some games.
+        self._real_mouse = winmouse.available()
+
+    def _place(self, x: int, y: int) -> None:
+        """Put the pointer at (x, y)."""
+        if self._real_mouse:
+            try:
+                winmouse.move_to(x, y)
+                return
+            except Exception:  # noqa: BLE001 - fall back to the plain way rather than failing the macro
+                self._real_mouse = False
+        self._mouse_ctl.position = (x, y)
 
     def _button(self, name: str):
         return {
@@ -115,11 +129,22 @@ class PynputInput:
             sx, sy = x, y
         for i in range(1, GLIDE_STEPS + 1):
             t = i / GLIDE_STEPS
-            ctl.position = (round(sx + (x - sx) * t), round(sy + (y - sy) * t))
+            self._place(round(sx + (x - sx) * t), round(sy + (y - sy) * t))
             time.sleep(0.008)
         for dx, dy in WIGGLE:
-            ctl.position = (x + dx, y + dy)
+            self._place(x + dx, y + dy)
             time.sleep(0.012)
+        if self._real_mouse:
+            # games that read raw mouse movement want to see a small push of the mouse, then back on the spot
+            try:
+                winmouse.move_by(2, 1)
+                time.sleep(0.012)
+                winmouse.move_by(-2, -1)
+                time.sleep(0.012)
+            except Exception:  # noqa: BLE001
+                pass
+            self._place(x, y)
+            time.sleep(0.05)  # let the game draw a frame with the pointer over the target before the click
         time.sleep(0.02)
 
     def click(
@@ -128,8 +153,8 @@ class PynputInput:
         if nudge:
             self._approach(x, y)
         else:
-            self._mouse_ctl.position = (x, y)
-            time.sleep(0.01)
+            self._place(x, y)
+            time.sleep(0.05 if self._real_mouse else 0.01)
         b = self._button(button)
         for i in range(max(1, clicks)):
             self._mouse_ctl.press(b)
@@ -140,19 +165,19 @@ class PynputInput:
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, button: str = "left", duration_ms: int = 300) -> None:
         b = self._button(button)
-        self._mouse_ctl.position = (x1, y1)
+        self._place(x1, y1)
         time.sleep(0.02)
         self._mouse_ctl.press(b)
         steps = max(2, int(duration_ms / 15))
         for i in range(1, steps + 1):
             t = i / steps
-            self._mouse_ctl.position = (int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t))
+            self._place(int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t))
             time.sleep(duration_ms / 1000.0 / steps)
         self._mouse_ctl.release(b)
 
     def scroll(self, dx: int, dy: int, x: int | None = None, y: int | None = None) -> None:
         if x is not None and y is not None:
-            self._mouse_ctl.position = (x, y)
+            self._place(x, y)
             time.sleep(0.01)
         self._mouse_ctl.scroll(dx, dy)
 

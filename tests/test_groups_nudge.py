@@ -47,6 +47,7 @@ class FakeMouse:
 def real_input(mouse):
     inp = PynputInput.__new__(PynputInput)
     inp._mouse_ctl = mouse
+    inp._real_mouse = False  # these tests are about the plain way of moving; see test_winmouse.py for Windows
 
     class Buttons:
         left = right = middle = "b"
