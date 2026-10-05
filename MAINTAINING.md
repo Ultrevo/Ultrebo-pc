@@ -35,6 +35,9 @@ pyinstaller --noconfirm --clean packaging/ultrebo.spec
 dist/Ultrebo/Ultrebo --selftest        # checks image and text recognition work in the build
 ```
 
+On Windows the GitHub build compiles PyInstaller's small launcher (the "bootloader") itself instead of using the downloaded one, and gives the
+exe its name, company and version details (`packaging/ultrebo.spec`). Both make antivirus programs less likely to flag the exe. Code signing would help most.
+
 Every push also builds Windows and macOS test builds on GitHub: open the run under **Actions** and download the
 **Ultrebo-test-build** artifacts.
 

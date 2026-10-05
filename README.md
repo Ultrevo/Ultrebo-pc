@@ -149,6 +149,18 @@ settings are kept, because they're stored separately.
 
 ## Troubleshooting
 
+### Windows Security says the file contains a virus
+
+Ultrebo isn't code-signed yet, and it records and sends mouse and keyboard input, which can make Windows Security's automatic detection guess wrong about a new program.
+If it blocks or deletes `Ultrebo.exe` (for example *Behavior:Win32/DefenseEvasion.A!ml*), it is a false alarm, but check you have the real file first:
+
+1. Download only from this project's [Releases](../../releases) page. Compare the zip's checksum with the `.sha256` file next to it (PowerShell: `Get-FileHash <zip> -Algorithm SHA256`).
+2. Make an empty folder such as `C:\Ultrebo`, then add it under **Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder**.
+3. Unzip into that folder and run `Ultrebo.exe`.
+
+You can also upload the zip to [VirusTotal](https://www.virustotal.com) for a second opinion, or report the false alarm to Microsoft at <https://www.microsoft.com/wdsi/filesubmission>.
+The code is open and the downloads are built by GitHub from it, so you can read exactly what runs.
+
 | Problem | Fix |
 | --- | --- |
 | Clicks land in the wrong place | Don't move or resize the game window after recording. On Windows, keep display scaling the same as when you recorded. Re-record if in doubt. |
