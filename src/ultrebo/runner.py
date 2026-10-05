@@ -26,6 +26,7 @@ from . import textmatch
 from .imagematch import TemplateCache, find_template, to_gray
 from .inputs import InputBackend
 from .model import Macro, RunMode, Step, StepType, WatchAction
+from .notify import Notifier, clean_text
 from .ocr import OcrEngine
 from .screen import ScreenSource
 
@@ -200,8 +201,11 @@ class Runner:
         on_status: Callable[[str], None] | None = None,
         on_state: Callable[[bool], None] | None = None,
         on_error: Callable[[str], None] | None = None,
+        notifier: Notifier | None = None,
     ):
         self.input = input_backend
+        self.notifier = notifier
+        self._macro_name = ""
         self.finder = Finder(screen, ocr, TemplateCache(templates_dir)) if screen is not None else None
         self._on_status = on_status or (lambda s: None)
         self._on_state = on_state or (lambda r: None)
@@ -240,6 +244,12 @@ class Runner:
                 return f'The rule "{r.title()}" has no text entered.'
         if (rules or any(s.is_finder for s in enabled)) and self.finder is None:
             return "Screen capture is not available."
+        for s in [*enabled, *rules]:
+            if s.is_finder and s.notify and (self.notifier is None or not self.notifier.configured()):
+                return (
+                    f'"{s.title()}" is set to send a screenshot to Discord, but no Discord webhook is set. '
+                    "Add one in Settings, or untick that option."
+                )
         return None
 
     def start(self, macro: Macro) -> str | None:
@@ -248,6 +258,7 @@ class Runner:
         if error:
             return error
         self.stop()
+        self._macro_name = macro.name
         self._scan_s = max(macro.scan_interval_ms / 1000.0, MIN_SCAN_S)
         stop = Cancel()
         self._stop = stop
@@ -370,9 +381,11 @@ class Runner:
                 if cancel.wait(step.delay_after_ms / 1000.0):
                     return
             return
-        target = self._wait_for_target(step, cancel)
-        if target is None:
+        found = self._wait_for_target(step, cancel)
+        if found is None:
             return  # not found in time: skip the step
+        target, frame = found
+        self._notify_found(step, frame)
         if step.click_on_found:
             for _ in range(times):
                 if not self._act(step, target, cancel, locked):
@@ -396,6 +409,7 @@ class Runner:
             target = self.finder.find(frame, step) if frame is not None else None
             if target is not None:
                 self._on_status(step.title())
+                self._notify_found(step, frame)
                 if step.click_on_found:
                     for _ in range(max(step.repeat, 1)):
                         if not self._act(step, target, cancel):
@@ -408,13 +422,13 @@ class Runner:
         self._on_status("Waiting...")
         cancel.wait(self._scan_s)
 
-    def _wait_for_target(self, step: Step, cancel: Cancel) -> Target | None:
+    def _wait_for_target(self, step: Step, cancel: Cancel) -> tuple[Target, Frame] | None:
         deadline = time.monotonic() + step.timeout_ms / 1000.0
         while not cancel.is_set():
             frame = self.finder.capture()
             target = self.finder.find(frame, step)
             if target is not None:
-                return target
+                return target, frame
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return None
@@ -445,6 +459,7 @@ class Runner:
                     continue
                 step, target = hit
                 self._on_status(f"Watcher: {step.title()}")
+                self._notify_found(step, frame)
                 restart = step.on_seen is WatchAction.RESTART
                 if not self._acquire(stop):
                     return
@@ -468,6 +483,13 @@ class Runner:
         except Exception as e:  # noqa: BLE001
             self._on_error(str(e))
             stop.set()
+
+    def _notify_found(self, step: Step, frame: Frame | None) -> None:
+        """A step that asked for it was found: queue the screenshot for Discord (sent in the background)."""
+        if not step.notify or self.notifier is None or frame is None:
+            return
+        where = f' in "{clean_text(self._macro_name, 60)}"' if self._macro_name else ""
+        self.notifier.send(step.id, f'Ultrebo found "{clean_text(step.title(), 80)}"{where}', frame.image)
 
     # -- doing things
     def _acquire(self, cancel: Cancel) -> bool:

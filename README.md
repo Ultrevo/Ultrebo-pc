@@ -122,6 +122,20 @@ anyone. They open their own macro's Rules tab and use **Share > Import rules fro
 
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.
 
+### Screenshots to Discord
+
+Want to know when something is found while you're away? Add a **Discord webhook** and tick **Send a screenshot to Discord when found** on any
+Find image or Find text step, or on a rule. Each time it is found, Ultrebo posts a screenshot of the monitor it is watching, with a short message such as
+`Ultrebo found "Victory" in "Farm"`, to your channel.
+
+1. In Discord open your channel's **Settings > Integrations > Webhooks > New Webhook** and choose **Copy Webhook URL**.
+2. In Ultrebo open **Settings**, paste it into **Discord webhook** and click **Send test** to check it works.
+
+- A step sends at most one screenshot every few seconds, so a rule that keeps matching won't flood the channel. Sending happens in the background and never slows the macro down.
+- **Keep the webhook address private:** anyone who has it can post in that channel. It is saved only on your computer and is never included in a shared rules file. Importing rules never turns this on.
+- The screenshot shows the whole watched monitor, so it can include anything on screen at that moment.
+- If a macro has this ticked but no webhook is set, Ultrebo tells you instead of starting.
+
 ## Updating
 
 When a newer version is out, Ultrebo shows an **Update available** message when it opens. Click **Update now**: it downloads the new version
@@ -150,7 +164,8 @@ settings are kept, because they're stored separately.
 Everything runs on your computer. Macros and cropped images are stored in your user folder
 (`%APPDATA%\Ultrebo` on Windows, `~/Library/Application Support/Ultrebo` on a Mac). Screenshots are examined in memory and thrown away;
 the only picture saved is the box you crop. Text recognition (RapidOCR) is bundled and runs offline.
-The only network use is the optional update check against GitHub (switch it off in *Settings*), plus downloading the new version if you click **Update now**.
+Network use: the optional update check against GitHub (switch it off in *Settings*), downloading the new version if you click **Update now**, and, only if you
+set a Discord webhook and tick the option on a step or rule, sending a screenshot to that webhook when it is found.
 
 **Recording captures every key you press until you stop it**, so don't type passwords while recording.
 

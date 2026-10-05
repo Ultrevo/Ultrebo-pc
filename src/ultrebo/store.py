@@ -22,6 +22,9 @@ class Settings:
     active_macro_id: str | None = None
     #: Which monitor image and text steps watch (1, 2, ...).
     monitor: int = 1
+    #: Discord webhook that steps and rules marked "send a screenshot to Discord" post to. It is a secret, so it
+    #: stays in this file and is never put in a macro or a shared rule pack.
+    webhook_url: str = ""
     #: Not used for anything yet; keeps unknown keys from older/newer versions when saving.
     extra: dict = field(default_factory=dict)
 
@@ -33,12 +36,13 @@ class Settings:
             record_hotkey=self.record_hotkey,
             active_macro_id=self.active_macro_id,
             monitor=self.monitor,
+            webhook_url=self.webhook_url,
         )
         return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
-        known = {"check_updates", "start_stop_hotkey", "record_hotkey", "active_macro_id", "monitor"}
+        known = {"check_updates", "start_stop_hotkey", "record_hotkey", "active_macro_id", "monitor", "webhook_url"}
         s = cls()
         s.check_updates = bool(data.get("check_updates", s.check_updates))
         s.start_stop_hotkey = str(data.get("start_stop_hotkey", s.start_stop_hotkey))
@@ -48,6 +52,8 @@ class Settings:
             s.monitor = max(int(data.get("monitor", s.monitor)), 1)
         except (TypeError, ValueError):
             pass
+        url = data.get("webhook_url")
+        s.webhook_url = url.strip() if isinstance(url, str) else ""
         s.extra = {k: v for k, v in data.items() if k not in known}
         return s
 

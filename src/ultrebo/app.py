@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from . import __version__, updater
 from .hotkeys import HotkeyManager
+from .notify import Notifier
 from .ocr import RapidOcrEngine
 from .paths import data_dir
 from .runner import Runner
@@ -33,9 +34,10 @@ def asset_path(name: str) -> Path:
 
 def build_window(store: MacroStore, screen, input_backend, ocr, hotkeys: HotkeyManager | None) -> tuple[MainWindow, Bridge]:
     bridge = Bridge()
+    notifier = Notifier(lambda: store.settings.webhook_url, on_problem=lambda text: bridge.status.emit(f"Discord: {text}"))
     runner = Runner(
         input_backend, screen, ocr, store.templates_dir,
-        on_status=bridge.status.emit, on_state=bridge.state.emit, on_error=bridge.error.emit,
+        on_status=bridge.status.emit, on_state=bridge.state.emit, on_error=bridge.error.emit, notifier=notifier,
     )
     ctx = AppContext(store=store, screen=screen, runner=runner)
     window = MainWindow(ctx, bridge, hotkeys)

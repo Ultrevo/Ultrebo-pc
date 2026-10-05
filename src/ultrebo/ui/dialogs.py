@@ -3,8 +3,10 @@
 """About and Settings dialogs."""
 from __future__ import annotations
 
+import threading
 import webbrowser
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
@@ -12,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from .. import DISCORD, DONATE_ETH, REPO, WEBSITE, __version__
 from ..inputs import validate_key_spec
+from ..notify import is_valid_webhook, post
 from ..store import Settings
 from .monitor_view import MonitorIdentifier
 
@@ -77,6 +80,8 @@ class AboutDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
+    _test_done = Signal(str)
+
     def __init__(self, settings: Settings, parent: QWidget | None = None, screen=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -117,6 +122,25 @@ class SettingsDialog(QDialog):
             ))
         else:
             self.monitor_box = None
+        self.webhook = QLineEdit(settings.webhook_url)
+        self.webhook.setEchoMode(QLineEdit.EchoMode.PasswordEchoOnEdit)  # it is a secret: hidden unless being typed
+        self.webhook.setPlaceholderText("https://discord.com/api/webhooks/...")
+        self.webhook_test = QPushButton("Send test")
+        self.webhook_test.clicked.connect(self._send_test)
+        hook_row = QHBoxLayout()
+        hook_row.setContentsMargins(0, 0, 0, 0)
+        hook_row.addWidget(self.webhook, 1)
+        hook_row.addWidget(self.webhook_test)
+        hook_holder = QWidget()
+        hook_holder.setLayout(hook_row)
+        form.addRow("Discord webhook", hook_holder)
+        v.addWidget(_label(
+            "Steps and rules with \"Send a screenshot to Discord\" ticked post a screenshot of the watched monitor here "
+            "when they are found. In Discord: channel settings > Integrations > Webhooks > New Webhook > Copy URL. "
+            "Anyone who has this address can post in that channel, so keep it private. It is saved only on this computer "
+            "and is never included in a shared rules file. Leave it empty to turn this off.", muted=True,
+        ))
+        self._test_done.connect(self._test_finished)
         self.updates = QCheckBox("Check for updates on launch")
         self.updates.setChecked(settings.check_updates)
         v.addWidget(self.updates)
@@ -130,6 +154,26 @@ class SettingsDialog(QDialog):
         self._identifier.clear()
         super().done(result)
 
+    def _send_test(self) -> None:
+        url = self.webhook.text().strip()
+        if not is_valid_webhook(url):
+            QMessageBox.warning(self, "Ultrebo", "That doesn't look like a Discord webhook address. It starts with https://discord.com/api/webhooks/")
+            return
+        self.webhook_test.setEnabled(False)
+        self.webhook_test.setText("Sending...")
+        threading.Thread(
+            target=lambda: self._test_done.emit(post(url, "Ultrebo is connected. Screenshots will appear here.", None) or ""),
+            daemon=True, name="ultrebo-discord-test",
+        ).start()
+
+    def _test_finished(self, problem: str) -> None:
+        self.webhook_test.setEnabled(True)
+        self.webhook_test.setText("Send test")
+        if problem:
+            QMessageBox.warning(self, "Ultrebo", problem)
+        else:
+            QMessageBox.information(self, "Ultrebo", "Sent. Check your Discord channel for the message.")
+
     def _save(self) -> None:
         start, record = self.start_key.text().strip(), self.record_key.text().strip()
         for label, spec in (("Start / stop macro", start), ("Start / stop recording", record)):
@@ -140,8 +184,17 @@ class SettingsDialog(QDialog):
         if start.lower() == record.lower():
             QMessageBox.warning(self, "Ultrebo", "The two hotkeys must be different.")
             return
+        hook = self.webhook.text().strip()
+        if hook and not is_valid_webhook(hook):
+            QMessageBox.warning(
+                self, "Ultrebo",
+                "The Discord webhook doesn't look right. It should start with https://discord.com/api/webhooks/ "
+                "(or leave it empty).",
+            )
+            return
         self._settings.start_stop_hotkey = start.lower()
         self._settings.record_hotkey = record.lower()
+        self._settings.webhook_url = hook
         self._settings.check_updates = self.updates.isChecked()
         if self.monitor_box is not None:
             self._settings.monitor = int(self.monitor_box.currentData())

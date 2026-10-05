@@ -49,8 +49,8 @@ def export_pack(macro: Macro, templates_dir: Path, path: Path, name: str | None 
     images: dict[str, bytes] = {}
     for rule in rules:
         data = rule.to_dict()
-        for key in ("id", "priority", "region", "template_file", "group_id"):
-            data.pop(key, None)  # ids are new on import; the search area belongs to this screen only
+        for key in ("id", "priority", "region", "template_file", "group_id", "notify"):
+            data.pop(key, None)  # ids are new on import; the search area belongs to this screen only; Discord is your own
         if rule.group_id and macro.group_name(rule.group_id):
             data["group"] = macro.group_name(rule.group_id)
         if rule.is_image:
@@ -165,6 +165,7 @@ def read_pack(
                 raise RulePackError("Rule packs can only contain picture and text rules.")
             rule = Step.from_dict({k: v for k, v in item.items() if k not in ("id", "template_file", "region", "group_id")})
             rule.watch = True
+            rule.notify = False  # a pack never switches on sending screenshots; that is each person's own choice
             rule.nudge = bool(rule.nudge)
             found = groups.get(str(item.get("group") or "").strip().lower()) if item.get("group") else None
             rule.group_id = found.id if found else None

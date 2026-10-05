@@ -118,6 +118,12 @@ class StepDialog(QDialog):
         fl.setContentsMargins(0, 0, 0, 0)
         self.click_found = QCheckBox("Click it when found")
         fl.addWidget(self.click_found)
+        self.notify = QCheckBox("Send a screenshot to Discord when found")
+        self.notify.setToolTip(
+            "Posts a screenshot of the watched monitor to your Discord webhook (set in Settings), at most once every "
+            "few seconds for this step."
+        )
+        fl.addWidget(self.notify)
         form = QFormLayout()
         self.f_button = QComboBox()
         self.f_button.addItems(BUTTONS)
@@ -486,6 +492,7 @@ class StepDialog(QDialog):
         self.t_threshold.setValue(s.threshold)
         self.t_text.setText(s.text)
         self.click_found.setChecked(s.click_on_found)
+        self.notify.setChecked(s.notify)
         self.f_button.setCurrentText(s.button if s.button in BUTTONS else "left")
         self.f_double.setChecked(s.clicks == 2)
         self.on_seen.setCurrentIndex(self.on_seen.findData(s.on_seen.value))
@@ -539,6 +546,7 @@ class StepDialog(QDialog):
                 s.text = self.t_text.text().strip()
                 s.threshold = round(self.t_threshold.value(), 2)
             s.click_on_found = self.click_found.isChecked()
+            s.notify = self.notify.isChecked()
             s.button = self.f_button.currentText()
             s.clicks = 2 if self.f_double.isChecked() else 1
             s.watch = self.rule

@@ -421,3 +421,17 @@ def test_about_check_for_updates_tells_you_what_happened(window, monkeypatch):
     assert seen[-1][0] == "info" and "latest version" in seen[-1][1]
     window._on_update_result(upd.CheckResult(upd.Update("0.9.0", "https://github.com/x"), "0.9.0"))
     assert shown == ["0.9.0"]
+
+
+def test_finder_dialogs_remember_the_discord_option(window):
+    for rule in (False, True):
+        d = dialog_for(window, Step(type=StepType.TEXT), rule=rule)
+        assert not d.notify.isChecked()
+        d.t_text.setText("Victory")
+        d.notify.setChecked(True)
+        d._accept()
+        assert d.result_step().notify is True
+        again = dialog_for(window, d.result_step(), rule=rule)
+        assert again.notify.isChecked()
+        for dialog in (d, again):
+            dialog.deleteLater()
