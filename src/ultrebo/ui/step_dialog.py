@@ -303,7 +303,8 @@ class StepDialog(QDialog):
         f.addRow("Hold for", self.k_hold)
         f.addRow(muted(
             "Modifiers: ctrl, shift, alt, cmd (the Windows key on Windows). Named keys: enter, esc, tab, space, "
-            "backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1 to f20."
+            "backspace, delete, insert, up, down, left, right, home, end, pageup, pagedown, f1 to f24, menu, pause, "
+            "print_screen, num_lock, scroll_lock, caps_lock."
         ))
         self.k_keys.textChanged.connect(self._key_changed)
         return w

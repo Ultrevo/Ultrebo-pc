@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
-from . import winmouse
+from . import winkeys, winmouse
 
 MODIFIERS = ("ctrl", "shift", "alt", "cmd")
 
@@ -26,7 +26,16 @@ _KEY_ALIASES = {
     "alt": "alt", "option": "alt",
     "cmd": "cmd", "win": "cmd", "windows": "cmd", "super": "cmd", "command": "cmd",
 }
-_FUNCTION_KEYS = {f"f{i}" for i in range(1, 21)}
+_FUNCTION_KEYS = {f"f{i}" for i in range(1, 25)}
+#: Other keys by the names pynput gives them (a recording can produce any of these).
+_NAMED_KEYS = {
+    "alt_l", "alt_r", "alt_gr", "ctrl_l", "ctrl_r", "shift_l", "shift_r", "cmd_l", "cmd_r",
+    "menu", "num_lock", "pause", "print_screen", "scroll_lock",
+    "media_play_pause", "media_stop", "media_volume_mute", "media_volume_down", "media_volume_up",
+    "media_previous", "media_next",
+}
+_MORE_ALIASES = {"numlock": "num_lock", "scrolllock": "scroll_lock", "printscreen": "print_screen", "prtsc": "print_screen",
+                 "apps": "menu", "break": "pause"}
 
 
 def parse_key_spec(spec: str) -> tuple[list[str], str]:
@@ -53,8 +62,10 @@ def normalize_key_name(name: str) -> str:
     n = name.strip().lower()
     if n in _KEY_ALIASES:
         return _KEY_ALIASES[n]
-    if n in _FUNCTION_KEYS:
+    if n in _FUNCTION_KEYS or n in _NAMED_KEYS:
         return n
+    if n in _MORE_ALIASES:
+        return _MORE_ALIASES[n]
     if len(n) == 1:
         return n
     raise ValueError(f'Unknown key "{name}"')
@@ -98,6 +109,8 @@ class PynputInput:
         self._key_ctl = keyboard.Controller()
         #: On Windows the pointer is moved with real mouse input; see winmouse.py for why that matters to some games.
         self._real_mouse = winmouse.available()
+        #: Same idea for the keyboard: on Windows keys are pressed by scan code, which games understand.
+        self._real_keys = winkeys.available()
 
     def _place(self, x: int, y: int) -> None:
         """Put the pointer at (x, y)."""
@@ -184,10 +197,45 @@ class PynputInput:
     def _to_key(self, name: str):
         if len(name) == 1:
             return name
-        return getattr(self._keyboard.Key, name)
+        key = getattr(self._keyboard.Key, name, None)
+        if key is None:
+            raise ValueError(f'The key "{name}" isn\'t available on this system.')
+        return key
+
+    def _scan_codes(self, names: list[str]) -> list[tuple[int, bool]]:
+        """Scan code and extended flag for each key name, or raises when one can't be pressed this way."""
+        out = []
+        for name in names:
+            vk = winkeys.vk_for_char(name) if len(name) == 1 else getattr(self._to_key(name), "value").vk
+            code = winkeys.scan_for_vk(vk) if vk else None
+            if code is None:
+                raise ValueError(name)
+            out.append(code)
+        return out
+
+    def _press_by_scan_code(self, mods: list[str], key: str, hold_ms: int) -> None:
+        codes = self._scan_codes([*mods, key])  # work everything out first, so a failure sends nothing
+        down: list[tuple[int, bool]] = []
+        try:
+            for code in codes:
+                winkeys.send_scan(*code, True)
+                down.append(code)
+            time.sleep(max(hold_ms, 1) / 1000.0)
+        finally:
+            for code in reversed(down):  # never leave a key held down, whatever went wrong
+                try:
+                    winkeys.send_scan(*code, False)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def press_keys(self, spec: str, hold_ms: int = 60) -> None:
         mods, key = parse_key_spec(spec)
+        if self._real_keys:
+            try:
+                self._press_by_scan_code(mods, key, hold_ms)
+                return
+            except Exception:  # noqa: BLE001 - a key with no scan code (or a refusal): use the plain way instead
+                pass
         held = [self._to_key(m) for m in mods]
         main = self._to_key(key)
         for m in held:

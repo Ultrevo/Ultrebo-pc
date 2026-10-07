@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +74,8 @@ class MacroStore:
         self._settings_file = self.folder / "settings.json"
         self._lock = threading.RLock()
         self._listeners: list[Callable[[], None]] = []
+        #: Told when a change can't be written to disk (the interface shows it). Without one the error is raised.
+        self.on_save_error: Callable[[str], None] | None = None
         self.macros: list[Macro] = self._load_macros()
         self.settings: Settings = self._load_settings()
 
@@ -113,12 +116,20 @@ class MacroStore:
     def save(self) -> None:
         """Write macros to disk. Call after changing a macro or its steps."""
         with self._lock:
-            self._write(self._macros_file, [m.to_dict() for m in self.macros])
+            self._write_or_report(self._macros_file, [m.to_dict() for m in self.macros], "your macros")
         self._changed()
 
     def save_settings(self) -> None:
         with self._lock:
-            self._write(self._settings_file, self.settings.to_dict())
+            self._write_or_report(self._settings_file, self.settings.to_dict(), "your settings")
+
+    def _write_or_report(self, path: Path, payload, what: str) -> None:
+        try:
+            self._write(path, payload)
+        except OSError as e:
+            if self.on_save_error is None:
+                raise
+            self.on_save_error(f"Ultrebo couldn't save {what}: {e}\n\nFolder: {self.folder}")
 
     # -- cropped images
     def template_path(self, name: str) -> Path:
@@ -153,7 +164,15 @@ class MacroStore:
             return Settings()
 
     @staticmethod
-    def _write(path: Path, payload) -> None:
+    def _write(path: Path, payload, attempts: int = 8) -> None:
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        for attempt in range(attempts):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                # On Windows another program (antivirus, a sync or search tool) can hold the file for a moment.
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(0.05 * (attempt + 1))

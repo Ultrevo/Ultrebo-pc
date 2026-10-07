@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self.bridge = bridge
         self.hotkeys = hotkeys
         self.store = ctx.store
+        self.store.on_save_error = self._on_save_error
         self.recorder: Recorder | None = None
         self._running = False
         self._current_id: str | None = None
@@ -615,6 +616,11 @@ class MainWindow(QMainWindow):
     def _on_status(self, text: str) -> None:
         if text:
             self.status_label.setText(f"Running: {text}" if self._running else text)
+
+    def _on_save_error(self, message: str) -> None:
+        """A change couldn't be written to disk: say so, instead of quietly losing it."""
+        self.status_label.setText("Couldn't save")
+        QMessageBox.warning(self, "Ultrebo", message)
 
     def _on_error(self, message: str) -> None:
         self._restore()

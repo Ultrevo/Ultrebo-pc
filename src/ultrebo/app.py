@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
+import traceback
 from pathlib import Path
 
 from PySide6.QtGui import QIcon
@@ -86,9 +88,9 @@ def _selftest(say) -> int:
     text_ok = textmatch.find(lines, "I'm here", 0.7) is not None
     patch = bgr[60:160, 150:450].copy()
     image_ok = find_template(to_gray(bgr), to_gray(patch), 0.9) is not None
-    from . import winmouse
+    from . import winkeys, winmouse
 
-    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} drawn={drawn} ocr={[[w.text for w in line] for line in lines]} mouse={winmouse.probe()}")
+    say(f"selftest: text={'ok' if text_ok else 'FAILED'} image={'ok' if image_ok else 'FAILED'} cv2={cv2.__version__} drawn={drawn} ocr={[[w.text for w in line] for line in lines]} mouse={winmouse.probe()} keys={winkeys.probe()}")
     return 0 if (text_ok and image_ok and drawn > 500) else 1
 
 
@@ -126,6 +128,31 @@ def _log_update_check(result) -> None:
         pass
 
 
+def _install_error_log(bridge) -> None:
+    """Write any error the program doesn't expect to `error.log` in the data folder and say so in the status bar.
+
+    The Windows app has no console, so without this a failure inside a button or dialog would vanish without a trace.
+    """
+    def record(kind, error, trace) -> None:
+        text = "".join(traceback.format_exception(kind, error, trace))
+        try:
+            with open(data_dir() / "error.log", "a", encoding="utf-8") as f:
+                f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')}  Ultrebo {__version__}\n{text}\n")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            bridge.status.emit("Something went wrong - details are in error.log in the Ultrebo data folder")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sys.__excepthook__(kind, error, trace)
+        except Exception:  # noqa: BLE001
+            pass
+
+    sys.excepthook = record
+    threading.excepthook = lambda args: record(args.exc_type, args.exc_value, args.exc_traceback)
+
+
 def main() -> int:
     if "--check-update" in sys.argv:
         rest = sys.argv[sys.argv.index("--check-update") + 1:]
@@ -158,6 +185,7 @@ def main() -> int:
     screen = MssScreen()
     screen.set_monitor(store.settings.monitor)
     window, bridge = build_window(store, screen, input_backend, RapidOcrEngine(), HotkeyManager())
+    _install_error_log(bridge)
     window.show()
 
     if store.settings.check_updates:

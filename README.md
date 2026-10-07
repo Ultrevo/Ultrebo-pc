@@ -165,6 +165,7 @@ The code is open and the downloads are built by GitHub from it, so you can read 
 
 | Problem | Fix |
 | --- | --- |
+| Something didn't save, or a button did nothing | Look for `error.log` in Ultrebo's data folder (`%APPDATA%\Ultrebo` on Windows) and send it to us on Discord. Ultrebo also tells you if it can't write your macros to disk. |
 | Clicks land in the wrong place | Don't move or resize the game window after recording. On Windows, keep display scaling the same as when you recorded. Re-record if in doubt. |
 | A game ignores the clicks (Windows) | Run Ultrebo as administrator. Some games with anti-cheat block simulated input entirely; nothing here works around that. |
 | Nothing happens on a Mac | Check Accessibility and Input Monitoring are on for Ultrebo, then restart it. |

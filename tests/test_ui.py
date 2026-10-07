@@ -435,3 +435,14 @@ def test_finder_dialogs_remember_the_discord_option(window):
         assert again.notify.isChecked()
         for dialog in (d, again):
             dialog.deleteLater()
+
+
+def test_a_save_that_fails_tells_the_user_instead_of_quietly_losing_the_edit(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    window.new_macro()
+    monkeypatch.setattr("ultrebo.store.os.replace", lambda a, b: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr("ultrebo.store.time.sleep", lambda s: None)
+    window._macro().name = "Renamed"
+    window.store.save()
+    assert shown and "couldn't save your macros" in shown[0] and "locked" in shown[0]
