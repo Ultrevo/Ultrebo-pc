@@ -83,6 +83,7 @@ your game on the monitor you chose, and re-record if you move it.
   how many misread letters are forgiven (0.8 allows about one wrong letter in six). It reads Latin letters and numbers (English and similar).
 - **Search area:** for either, you can pick a smaller area of the screen to search. It's faster and more accurate.
 - **Click it when found** can be switched off to make a step that only *waits* for something to appear.
+- **Then start the macro over from the first step** makes the macro go back to step 1 as soon as this step is found (and clicked), instead of carrying on to the next step. It doesn't use up one of your loops. Only used in Sequence mode.
 
 ### Rules
 

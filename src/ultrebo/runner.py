@@ -358,10 +358,17 @@ class Runner:
                 if macro.mode is RunMode.SEQUENCE:
                     if rounds > 1:
                         self._gate.restarted()  # a new loop is a restart: groups set to re-enable wake up
+                    start_over = False
                     for step in steps:
                         if cancel.is_set():
                             return
-                        self._run_step(step, cancel)
+                        if self._run_step(step, cancel):
+                            start_over = True  # this step was found and is set to start the macro over
+                            break
+                    if start_over:
+                        rounds -= 1  # starting over isn't a finished loop
+                        self._gate.restarted()
+                        continue
                     if cancel.wait(macro.loop_delay_ms / 1000.0):
                         return
                 else:
@@ -371,29 +378,31 @@ class Runner:
             cancel.root().set()  # a failure ends the whole run, not just this worker
 
     # -- one step in sequence mode
-    def _run_step(self, step: Step, cancel: Cancel, locked: bool = False) -> None:
+    def _run_step(self, step: Step, cancel: Cancel, locked: bool = False) -> bool:
+        """Run one step. True when the macro should now start over from its first step (a found step set to do that)."""
         self._on_status(step.title())
         times = max(step.repeat, 1)
         if not step.is_finder:
             for _ in range(times):
                 if not self._act(step, None, cancel, locked):
-                    return
+                    return False
                 if cancel.wait(step.delay_after_ms / 1000.0):
-                    return
-            return
+                    return False
+            return False
         found = self._wait_for_target(step, cancel)
         if found is None:
-            return  # not found in time: skip the step
+            return False  # not found in time: skip the step
         target, frame = found
         self._notify_found(step, frame)
         if step.click_on_found:
             for _ in range(times):
                 if not self._act(step, target, cancel, locked):
-                    return
+                    return False
                 if cancel.wait(step.delay_after_ms / 1000.0):
-                    return
-        else:
-            cancel.wait(step.delay_after_ms / 1000.0)
+                    return False
+        elif cancel.wait(step.delay_after_ms / 1000.0):
+            return False
+        return step.on_seen is WatchAction.RESTART
 
     # -- reactive mode: run only the first step whose condition is met
     def _reactive_cycle(self, steps: list[Step], cancel: Cancel) -> None:

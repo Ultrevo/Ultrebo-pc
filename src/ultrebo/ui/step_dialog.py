@@ -124,6 +124,12 @@ class StepDialog(QDialog):
             "few seconds for this step."
         )
         fl.addWidget(self.notify)
+        self.restart_after = QCheckBox("Then start the macro over from the first step")
+        self.restart_after.setToolTip(
+            "When this is found (and clicked, if you left that on), the macro goes back to step 1 instead of carrying on "
+            "to the next step. Only used in Sequence mode."
+        )
+        fl.addWidget(self.restart_after)
         form = QFormLayout()
         self.f_button = QComboBox()
         self.f_button.addItems(BUTTONS)
@@ -176,6 +182,7 @@ class StepDialog(QDialog):
         wl.addWidget(self.watch_options)
         fl.addWidget(self.watch_group)
         self.watch_group.setVisible(rule)
+        self.restart_after.setVisible(not rule)  # a rule has its own, richer choice: "Then" in the box above
         layout.addWidget(self.finder_box)
 
         # -- timing
@@ -494,6 +501,7 @@ class StepDialog(QDialog):
         self.t_text.setText(s.text)
         self.click_found.setChecked(s.click_on_found)
         self.notify.setChecked(s.notify)
+        self.restart_after.setChecked(s.on_seen is WatchAction.RESTART and not self.rule)
         self.f_button.setCurrentText(s.button if s.button in BUTTONS else "left")
         self.f_double.setChecked(s.clicks == 2)
         self.on_seen.setCurrentIndex(self.on_seen.findData(s.on_seen.value))
@@ -548,6 +556,8 @@ class StepDialog(QDialog):
                 s.threshold = round(self.t_threshold.value(), 2)
             s.click_on_found = self.click_found.isChecked()
             s.notify = self.notify.isChecked()
+            if not self.rule:
+                s.on_seen = WatchAction.RESTART if self.restart_after.isChecked() else WatchAction.CONTINUE
             s.button = self.f_button.currentText()
             s.clicks = 2 if self.f_double.isChecked() else 1
             s.watch = self.rule

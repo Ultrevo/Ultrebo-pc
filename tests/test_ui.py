@@ -446,3 +446,18 @@ def test_a_save_that_fails_tells_the_user_instead_of_quietly_losing_the_edit(win
     window._macro().name = "Renamed"
     window.store.save()
     assert shown and "couldn't save your macros" in shown[0] and "locked" in shown[0]
+
+
+def test_a_finder_step_remembers_the_start_over_option_but_a_rule_does_not_show_it(window):
+    d = dialog_for(window, Step(type=StepType.TEXT))
+    assert not d.restart_after.isChecked()
+    d.t_text.setText("Victory")
+    d.restart_after.setChecked(True)
+    d._accept()
+    assert d.result_step().on_seen is WatchAction.RESTART
+    again = dialog_for(window, d.result_step())
+    assert again.restart_after.isChecked()
+    rule = dialog_for(window, Step(type=StepType.TEXT), rule=True)
+    assert rule.restart_after.isHidden()
+    for dialog in (d, again, rule):
+        dialog.deleteLater()

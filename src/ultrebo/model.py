@@ -162,7 +162,8 @@ class Step:
         if self.is_text and not self.text.strip():
             return "no text entered"
         verb = "click" if self.click_on_found else "wait for"
-        return f"{verb} {target}" + (" - screenshot to Discord" if self.notify else "")
+        over = " - then start the macro over" if self.on_seen is WatchAction.RESTART and not self.watch else ""
+        return f"{verb} {target}{over}" + (" - screenshot to Discord" if self.notify else "")
 
     def rule_summary(self) -> str:
         """How a rule reads in the Rules list: what it looks for, then what it does."""
