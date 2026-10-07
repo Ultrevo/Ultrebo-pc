@@ -616,7 +616,7 @@ class MainWindow(QMainWindow):
 
     def toggle_run_from_button(self) -> None:
         if self._running:
-            self.ctx.runner.stop()
+            self.ctx.runner.request_stop()
             return
         macro = self._macro()
         if macro is None:
@@ -634,6 +634,18 @@ class MainWindow(QMainWindow):
         if problem:
             QApplication.beep()
 
+    def _run_hotkey(self) -> None:
+        """The start/stop hotkey was pressed (called on the hotkey's own thread).
+
+        Stopping is done right here, without waiting for the window to get round to it, so it is instant.
+        Starting goes through the window as usual.
+        """
+        recording = self.recorder is not None and self.recorder.recording
+        if self._running and not recording:
+            self.ctx.runner.request_stop()
+        else:
+            self.bridge.toggle_run.emit()
+
     def toggle_run(self) -> None:
         """Start or stop from the global hotkey (no delay: the game is already in front)."""
         start_key = self.store.settings.start_stop_hotkey.upper()
@@ -641,7 +653,7 @@ class MainWindow(QMainWindow):
             self._tell(f"Recording is on: press {self.store.settings.record_hotkey.upper()} to stop it first", problem=True)
             return
         if self._running:
-            self.ctx.runner.stop()
+            self.ctx.runner.request_stop()
             return
         macro = self._macro()
         if macro is None:
@@ -840,7 +852,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self.hotkeys.set_bindings({
-                self.store.settings.start_stop_hotkey: self.bridge.toggle_run.emit,
+                self.store.settings.start_stop_hotkey: self._run_hotkey,
                 self.store.settings.record_hotkey: self.bridge.toggle_record.emit,
             })
         except Exception as e:  # noqa: BLE001

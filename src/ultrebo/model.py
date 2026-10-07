@@ -126,6 +126,8 @@ class Step:
     nudge: bool = True
     #: Rules: which group the rule belongs to (a RuleGroup id), or None.
     group_id: str | None = None
+    #: Rules: a key (or combination such as "ctrl+s") to press after the click when this is found. Empty = none.
+    press_key: str = ""
     #: Send a screenshot to the Discord webhook (set in Settings) whenever this is found.
     notify: bool = False
     #: Optional search area [x, y, width, height]; None = whole screen.
@@ -173,8 +175,9 @@ class Step:
         if self.is_text and not self.text.strip():
             return "no text entered"
         click = "click it, then " if self.click_on_found else ""
+        key = f"press {self.press_key.strip()}, then " if self.press_key.strip() else ""
         shot = "send a screenshot to Discord, then " if self.notify else ""
-        return f"When {target} appears: {shot}{click}{self.on_seen.label.lower()}"
+        return f"When {target} appears: {shot}{click}{key}{self.on_seen.label.lower()}"
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}

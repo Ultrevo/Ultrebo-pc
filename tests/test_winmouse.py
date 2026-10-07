@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
+import threading
 import pytest
 
 from ultrebo import inputs, winmouse
@@ -48,6 +49,7 @@ class _Mouse:
 
 def make_backend(real, monkeypatch, log, fail=False):
     backend = object.__new__(inputs.PynputInput)  # skip pynput, which needs a real display
+    backend._abort = threading.Event()
     backend._mouse = _Mouse
     backend._mouse_ctl = FakeController()
     backend._real_mouse = real

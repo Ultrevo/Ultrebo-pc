@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from . import __version__
+from .inputs import validate_key_spec
 from .model import Macro, RuleGroup, Step, StepType, WatchAction
 
 EXTENSION = ".ultrebo-rules"
@@ -177,6 +178,9 @@ def read_pack(
             rule.clicks = 2 if rule.clicks == 2 else 1
             rule.repeat = 1
             rule.button = rule.button if rule.button in BUTTONS else "left"
+            rule.press_key = str(rule.press_key).strip()[:40]
+            if rule.press_key and validate_key_spec(rule.press_key):
+                rule.press_key = ""  # not a key this app knows: drop it rather than refuse the whole pack
             rule.enabled = bool(rule.enabled)
             rule.click_on_found = bool(rule.click_on_found)
             if not isinstance(rule.on_seen, WatchAction):

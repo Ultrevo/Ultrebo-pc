@@ -24,7 +24,7 @@ import numpy as np
 
 from . import textmatch
 from .imagematch import TemplateCache, find_template, to_gray
-from .inputs import InputBackend
+from .inputs import Aborted, InputBackend, validate_key_spec
 from .model import Macro, RunMode, Step, StepType, WatchAction
 from .notify import Notifier, clean_text
 from .ocr import OcrEngine
@@ -74,6 +74,11 @@ class GroupGate:
             for gid in list(self._until):
                 if self._groups[gid].reset_on_restart:
                     del self._until[gid]
+
+
+#: How long a rule holds its key down, and how long it waits after its click before pressing it.
+KEY_HOLD_MS = 60
+KEY_AFTER_CLICK_S = 0.05
 
 
 class Cancel:
@@ -216,6 +221,7 @@ class Runner:
         self._main: _Worker | None = None
         self._scan_s = DEFAULT_SCAN_S
         self._state_lock = threading.Lock()
+        self._announced: Cancel | None = None  # the run whose "stopped" has already been reported
         self._gate = GroupGate([])
 
     # ------------------------------------------------------------------ public
@@ -242,6 +248,10 @@ class Runner:
                 return f'The rule "{r.title()}" has no image picked.'
             if r.is_text and not r.text.strip():
                 return f'The rule "{r.title()}" has no text entered.'
+            if r.press_key.strip():
+                problem = validate_key_spec(r.press_key)
+                if problem:
+                    return f'The rule "{r.title()}" has a key that isn\'t valid: {problem}'
         if (rules or any(s.is_finder for s in enabled)) and self.finder is None:
             return "Screen capture is not available."
         for s in [*enabled, *rules]:
@@ -262,14 +272,31 @@ class Runner:
         self._scan_s = max(macro.scan_interval_ms / 1000.0, MIN_SCAN_S)
         stop = Cancel()
         self._stop = stop
+        self._announced = None
+        self._reset_input()
         self._supervisor = threading.Thread(target=self._supervise, args=(macro, stop), daemon=True, name="ultrebo-run")
         self._set_state(True)
         self._supervisor.start()
         return None
 
+    def request_stop(self) -> None:
+        """Stop right now and return at once (safe from any thread, including a hotkey's).
+
+        The macro is told to stop, any click or key press in progress is cut short, and "stopped" is reported
+        straight away; the worker threads wind down in the background a moment later.
+        """
+        stop = self._stop
+        if stop is None:
+            return
+        stop.set()
+        abort = getattr(self.input, "abort", None)
+        if abort is not None:
+            abort()
+        self._announce_stopped(stop)
+
     def stop(self) -> None:
-        if self._stop is not None:
-            self._stop.set()
+        """Stop, and wait (briefly) until everything has wound down."""
+        self.request_stop()
         sup = self._supervisor
         if sup is not None and sup is not threading.current_thread():
             sup.join(timeout=3)
@@ -282,6 +309,8 @@ class Runner:
             return "Screen capture is not available."
         stop = Cancel()
         self._stop = stop
+        self._announced = None
+        self._reset_input()
         self._scan_s = DEFAULT_SCAN_S
 
         def work() -> None:
@@ -291,7 +320,7 @@ class Runner:
             except Exception as e:  # noqa: BLE001 - report anything to the interface
                 self._on_error(str(e))
             finally:
-                self._set_state(False)
+                self._announce_stopped(stop)
                 self._on_status("")
 
         self._supervisor = threading.Thread(target=work, daemon=True, name="ultrebo-test")
@@ -302,6 +331,19 @@ class Runner:
 
     def _set_state(self, running: bool) -> None:
         self._on_state(running)
+
+    def _announce_stopped(self, run: Cancel) -> None:
+        """Report "not running" once for `run`, and never for a run that has since been replaced by a newer one."""
+        with self._state_lock:
+            if self._stop is not run or self._announced is run:
+                return
+            self._announced = run
+        self._set_state(False)
+
+    def _reset_input(self) -> None:
+        reset = getattr(self.input, "reset_abort", None)
+        if reset is not None:
+            reset()
 
     def _supervise(self, macro: Macro, stop: Cancel) -> None:
         try:
@@ -321,9 +363,8 @@ class Runner:
                 watcher_thread.start()
 
             # Wait for the main macro to finish. A restart swaps in a new worker, so keep following it.
-            while not stop.is_set():
+            while not stop.wait(0.01):  # wakes at once when stopped
                 worker = self._main
-                worker.thread.join(timeout=0.05)
                 if not worker.thread.is_alive() and worker is self._main and not worker.cancel.is_set():
                     break  # finished by itself (finite loops)
             stop.set()
@@ -336,7 +377,7 @@ class Runner:
             self._on_error(str(e))
         finally:
             stop.set()
-            self._set_state(False)
+            self._announce_stopped(stop)
             self._on_status("")
 
     def _spawn_main(self, macro: Macro, steps: list[Step], stop: Cancel) -> _Worker:
@@ -473,8 +514,17 @@ class Runner:
                 if not self._acquire(stop):
                     return
                 try:
-                    if step.click_on_found:
-                        self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks, nudge=step.nudge)
+                    try:
+                        if step.click_on_found:
+                            self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks, nudge=step.nudge)
+                        if step.press_key.strip():
+                            if step.click_on_found:
+                                stop.wait(KEY_AFTER_CLICK_S)  # let the click land before the key goes in
+                            if stop.is_set():
+                                return
+                            self.input.press_keys(step.press_key, KEY_HOLD_MS)
+                    except Aborted:
+                        return  # stopped partway through the click or key press
                     if restart and self._main is not None:
                         self._main.cancel.set()
                         self._main.thread.join(timeout=5)
@@ -510,12 +560,19 @@ class Runner:
     def _act(self, step: Step, target: Target | None, cancel: Cancel, locked: bool = False) -> bool:
         """Perform the step's action while holding the action lock. False when cancelled first."""
         if locked:
-            self._perform(step, target)
+            try:
+                self._perform(step, target)
+            except Aborted:
+                return False
             return True
         if not self._acquire(cancel):
             return False
         try:
+            if cancel.is_set():
+                return False  # stopped while waiting for the lock: do nothing more
             self._perform(step, target)
+        except Aborted:
+            return False  # stopped partway through the action
         finally:
             self._action_lock.release()
         return True
@@ -534,3 +591,6 @@ class Runner:
         elif target is not None:
             # A rule's Test button goes through here too, so it moves the mouse the same way the real rule does.
             self.input.click(target.x, target.y, step.button, step.hold_ms, step.clicks, nudge=step.watch and step.nudge)
+            if step.watch and step.press_key.strip():
+                time.sleep(KEY_AFTER_CLICK_S)
+                self.input.press_keys(step.press_key, KEY_HOLD_MS)

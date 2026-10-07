@@ -174,6 +174,13 @@ class StepDialog(QDialog):
             "only notice the mouse when it moves."
         )
         wo.addRow("", self.nudge)
+        self.press_key = QLineEdit()
+        self.press_key.setPlaceholderText("optional, e.g. e, enter, ctrl+s")
+        self.press_key.setToolTip(
+            "A key to press when this appears (after the click, if you left clicking on). Leave empty to press nothing. "
+            "Names such as enter, esc, tab, space, f5 and combinations such as ctrl+shift+s work."
+        )
+        wo.addRow("Press key", self.press_key)
         self.group_box = QComboBox()
         self.group_box.addItem("(no group)", "")
         for g in self._groups:
@@ -507,6 +514,7 @@ class StepDialog(QDialog):
         self.f_double.setChecked(s.clicks == 2)
         self.on_seen.setCurrentIndex(self.on_seen.findData(s.on_seen.value))
         self.nudge.setChecked(s.nudge)
+        self.press_key.setText(s.press_key)
         at = self.group_box.findData(s.group_id or "")
         self.group_box.setCurrentIndex(max(at, 0))
         self._refresh()
@@ -563,6 +571,12 @@ class StepDialog(QDialog):
             s.clicks = 2 if self.f_double.isChecked() else 1
             s.watch = self.rule
             if self.rule:
+                pressed = self.press_key.text().strip()
+                error = validate_key_spec(pressed) if pressed else None
+                if error:
+                    QMessageBox.warning(self, "Ultrebo", f"The key to press isn't valid: {error}")
+                    return
+                s.press_key = pressed
                 s.on_seen = WatchAction(self.on_seen.currentData())
                 s.nudge = self.nudge.isChecked()
                 s.group_id = self.group_box.currentData() or None

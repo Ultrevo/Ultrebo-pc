@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
+import threading
 import enum
 import json
 import types
@@ -55,6 +56,7 @@ class _Key(enum.Enum):
 
 def make_backend(monkeypatch, sent, scans=None, chars=None, real=True):
     backend = object.__new__(inputs.PynputInput)
+    backend._abort = threading.Event()
     backend._keyboard = types.SimpleNamespace(Key=_Key)
     backend._real_keys = real
     plain = []

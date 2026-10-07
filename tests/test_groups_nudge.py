@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
+import threading
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -48,6 +49,7 @@ def real_input(mouse):
     inp = PynputInput.__new__(PynputInput)
     inp._mouse_ctl = mouse
     inp._real_mouse = False  # these tests are about the plain way of moving; see test_winmouse.py for Windows
+    inp._abort = threading.Event()
 
     class Buttons:
         left = right = middle = "b"

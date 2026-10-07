@@ -10,7 +10,7 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QTimer, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from conftest import FakeInput, FakeScreen
+from conftest import FakeInput, FakeScreen, wait_until
 from ultrebo.app import build_window
 from ultrebo.model import Macro, RunMode, Step, StepType, WatchAction
 from ultrebo.store import MacroStore
@@ -264,9 +264,9 @@ def test_hotkey_toggle_starts_and_stops(window):
     QTest.qWait(200)
     assert window.ctx.runner.running and window._running
     window.toggle_run()
-    QTest.qWait(200)
-    assert not window.ctx.runner.running and not window._running
+    assert not window._running  # the window shows "stopped" the moment the key is pressed ...
     assert window.start_button.text().startswith("Start")
+    wait_until(lambda: not window.ctx.runner.running)  # ... and the worker threads finish a moment later
 
 
 def test_finished_recording_adds_steps(window, monkeypatch):

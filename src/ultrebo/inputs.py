@@ -3,6 +3,7 @@
 """Sends mouse and keyboard input. The runner only talks to the InputBackend interface."""
 from __future__ import annotations
 
+import threading
 import time
 from typing import Protocol
 
@@ -80,6 +81,10 @@ def validate_key_spec(spec: str) -> str | None:
     return None
 
 
+class Aborted(Exception):
+    """Raised inside an input action when the macro is stopped partway through it."""
+
+
 GLIDE_STEPS = 8
 #: Offsets (pixels) of the little wiggle before a nudged click; it always ends exactly on the target.
 WIGGLE = ((3, 2), (-3, -2), (2, -1), (0, 0))
@@ -111,6 +116,20 @@ class PynputInput:
         self._real_mouse = winmouse.available()
         #: Same idea for the keyboard: on Windows keys are pressed by scan code, which games understand.
         self._real_keys = winkeys.available()
+        #: Set when the macro is stopped: any click, drag or key press in progress ends right away.
+        self._abort = threading.Event()
+
+    def abort(self) -> None:
+        """Cut short whatever is being pressed or moved. Buttons and keys already down are still let go."""
+        self._abort.set()
+
+    def reset_abort(self) -> None:
+        self._abort.clear()
+
+    def _nap(self, seconds: float) -> None:
+        """Sleep, but give up the moment the macro is stopped."""
+        if self._abort.wait(max(seconds, 0.0)):
+            raise Aborted()
 
     def _place(self, x: int, y: int) -> None:
         """Put the pointer at (x, y)."""
@@ -143,22 +162,24 @@ class PynputInput:
         for i in range(1, GLIDE_STEPS + 1):
             t = i / GLIDE_STEPS
             self._place(round(sx + (x - sx) * t), round(sy + (y - sy) * t))
-            time.sleep(0.008)
+            self._nap(0.008)
         for dx, dy in WIGGLE:
             self._place(x + dx, y + dy)
-            time.sleep(0.012)
+            self._nap(0.012)
         if self._real_mouse:
             # games that read raw mouse movement want to see a small push of the mouse, then back on the spot
             try:
                 winmouse.move_by(2, 1)
-                time.sleep(0.012)
+                self._nap(0.012)
                 winmouse.move_by(-2, -1)
-                time.sleep(0.012)
+                self._nap(0.012)
+            except Aborted:
+                raise
             except Exception:  # noqa: BLE001
                 pass
             self._place(x, y)
-            time.sleep(0.05)  # let the game draw a frame with the pointer over the target before the click
-        time.sleep(0.02)
+            self._nap(0.05)  # let the game draw a frame with the pointer over the target before the click
+        self._nap(0.02)
 
     def click(
         self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1, nudge: bool = False
@@ -167,31 +188,35 @@ class PynputInput:
             self._approach(x, y)
         else:
             self._place(x, y)
-            time.sleep(0.05 if self._real_mouse else 0.01)
+            self._nap(0.05 if self._real_mouse else 0.01)
         b = self._button(button)
         for i in range(max(1, clicks)):
             self._mouse_ctl.press(b)
-            time.sleep(max(hold_ms, 1) / 1000.0)
-            self._mouse_ctl.release(b)
+            try:
+                self._nap(max(hold_ms, 1) / 1000.0)
+            finally:
+                self._mouse_ctl.release(b)  # never leave the button held down, even when stopped mid-click
             if i < clicks - 1:
-                time.sleep(0.05)
+                self._nap(0.05)
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, button: str = "left", duration_ms: int = 300) -> None:
         b = self._button(button)
         self._place(x1, y1)
-        time.sleep(0.02)
+        self._nap(0.02)
         self._mouse_ctl.press(b)
-        steps = max(2, int(duration_ms / 15))
-        for i in range(1, steps + 1):
-            t = i / steps
-            self._place(int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t))
-            time.sleep(duration_ms / 1000.0 / steps)
-        self._mouse_ctl.release(b)
+        try:
+            steps = max(2, int(duration_ms / 15))
+            for i in range(1, steps + 1):
+                t = i / steps
+                self._place(int(x1 + (x2 - x1) * t), int(y1 + (y2 - y1) * t))
+                self._nap(duration_ms / 1000.0 / steps)
+        finally:
+            self._mouse_ctl.release(b)
 
     def scroll(self, dx: int, dy: int, x: int | None = None, y: int | None = None) -> None:
         if x is not None and y is not None:
             self._place(x, y)
-            time.sleep(0.01)
+            self._nap(0.01)
         self._mouse_ctl.scroll(dx, dy)
 
     def _to_key(self, name: str):
@@ -220,7 +245,7 @@ class PynputInput:
             for code in codes:
                 winkeys.send_scan(*code, True)
                 down.append(code)
-            time.sleep(max(hold_ms, 1) / 1000.0)
+            self._nap(max(hold_ms, 1) / 1000.0)
         finally:
             for code in reversed(down):  # never leave a key held down, whatever went wrong
                 try:
@@ -234,14 +259,18 @@ class PynputInput:
             try:
                 self._press_by_scan_code(mods, key, hold_ms)
                 return
+            except Aborted:
+                raise
             except Exception:  # noqa: BLE001 - a key with no scan code (or a refusal): use the plain way instead
                 pass
         held = [self._to_key(m) for m in mods]
         main = self._to_key(key)
-        for m in held:
-            self._key_ctl.press(m)
-        self._key_ctl.press(main)
-        time.sleep(max(hold_ms, 1) / 1000.0)
-        self._key_ctl.release(main)
-        for m in reversed(held):
-            self._key_ctl.release(m)
+        pressed = []
+        try:
+            for m in [*held, main]:
+                self._key_ctl.press(m)
+                pressed.append(m)
+            self._nap(max(hold_ms, 1) / 1000.0)
+        finally:
+            for k in reversed(pressed):  # never leave a key held down, even when stopped mid-press
+                self._key_ctl.release(k)

@@ -94,6 +94,8 @@ in the background for the whole run, even while your steps are busy. When its ta
 - **Pause, then carry on:** the main macro pauses between actions, the rule clicks the target (if you left that on), waits the time you set, and the macro continues.
 - **Restart macro from the start:** the macro stops, the rule (optionally) clicks, waits, then the macro starts again from step 1.
 
+A rule can also **press a key** when it appears: fill in **Press key** (for example `e`, `enter` or `ctrl+s`). The key goes in right after the click, or on its own if you untick clicking.
+
 You can have as many rules as you like in one macro. **If two rules are on screen at the same moment, the one nearer the top of the list
 is handled first**; use Up and Down to reorder. The other is handled right after if it is still showing.
 A macro with only rules just sits and watches until you stop it. *Settings > Look at the screen every* controls how often the screen is checked.
@@ -122,7 +124,7 @@ anyone. They open their own macro's Rules tab and use **Share > Import rules fro
   need to pick a picture again.
 - The search area isn't shared, because it belongs to one screen.
 - Rule packs from the phone version can't be used on a computer, and the other way round.
-- **Only import rule packs from people you trust, and check what each rule does:** rules click things on your screen.
+- **Only import rule packs from people you trust, and check what each rule does:** rules click things on your screen and can press keys.
 
 Macros made with an older version, where a step was marked "always watching", are converted into rules automatically.
 
