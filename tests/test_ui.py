@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QTimer, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -466,33 +466,51 @@ def test_a_finder_step_remembers_the_start_over_option_but_a_rule_does_not_show_
 # ------------------------------------------------------------------ picking on screen from inside a dialog
 # Hiding a dialog ends its exec(), which used to throw away the step after "Pick image from screen" (or any other pick).
 
-class _FakePicker:
+_pickers: list = []
+
+
+class _FakePicker(QObject):
     """Stands in for the full-screen picker: after a moment it reports a pick (or a cancel)."""
 
+    box_picked = Signal(int, int, int, int)
+    point_picked = Signal(int, int)
+    cancelled = Signal()
     outcome = "box"
 
-    def __new__(cls, frame, mode, hint=""):
-        from PySide6.QtCore import QObject, Signal
+    def __init__(self, frame, mode, hint=""):
+        super().__init__()
+        _pickers.append(self)
 
-        class Picker(QObject):
-            box_picked = Signal(int, int, int, int)
-            point_picked = Signal(int, int)
-            cancelled = Signal()
+    def showFullScreen(self):
+        QTimer.singleShot(80, self._report)
 
-            def showFullScreen(self_):
-                from PySide6.QtCore import QTimer
-                QTimer.singleShot(80, lambda: {
-                    "box": lambda: self_.box_picked.emit(10, 10, 40, 30),
-                    "point": lambda: self_.point_picked.emit(25, 35),
-                    "cancel": lambda: self_.cancelled.emit(),
-                }[cls.outcome]())
+    def _report(self):
+        {
+            "box": lambda: self.box_picked.emit(10, 10, 40, 30),
+            "point": lambda: self.point_picked.emit(25, 35),
+            "cancel": lambda: self.cancelled.emit(),
+        }[type(self).outcome]()
 
-            def activateWindow(self_): pass
-            def raise_(self_): pass
-            def setScreen(self_, s): pass
-            def setGeometry(self_, g): pass
+    def activateWindow(self): pass
+    def raise_(self): pass
+    def setScreen(self, s): pass
+    def setGeometry(self, g): pass
 
-        return Picker()
+
+@pytest.fixture(autouse=True)
+def _delete_pickers(qapp):
+    """Qt objects left for the garbage collector can crash the test run at exit, so delete them as each test ends."""
+    yield
+    for obj in _pickers:
+        obj.deleteLater()
+    _pickers.clear()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def _delete_dialogs(window):
+    for dialog in window.findChildren(StepDialog):
+        dialog.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 def _run_with_user(window, monkeypatch, step, outcome, do_pick, rule=False, is_new=True):
@@ -531,6 +549,7 @@ def test_picking_an_image_and_then_saving_adds_the_step(window, monkeypatch):
     steps = window._macro().steps
     assert len(steps) == 1 and steps[0].template_file and window.table.rowCount() == 1
     assert window.store.template_path(steps[0].template_file).exists()
+    _delete_dialogs(window)
 
 
 def test_picking_a_position_while_editing_keeps_the_edit(window, monkeypatch):
@@ -560,6 +579,7 @@ def test_picking_a_position_while_editing_keeps_the_edit(window, monkeypatch):
     assert (saved.x, saved.y) == (25, 35) and saved.name == "Moved"
     reloaded = MacroStore(window.store.folder).macros[0].steps[0]
     assert (reloaded.x, reloaded.y, reloaded.name) == (25, 35, "Moved")
+    _delete_dialogs(window)
 
 
 def test_cancelling_a_pick_brings_the_dialog_back_ready_to_save(window, monkeypatch):
