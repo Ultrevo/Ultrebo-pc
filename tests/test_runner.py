@@ -338,4 +338,5 @@ def test_a_clicks_own_lead_in_wait_is_taken_out_of_the_pause_after_it(templates_
     runner.start(Macro(loops=1, steps=[Step(type=StepType.CLICK, x=1, y=1, hold_ms=20, delay_after_ms=100, repeat=6)]))
     assert wait_until(lambda: len(starts) == 6 and not runner.running, timeout=5)
     gaps = [b - a for a, b in zip(starts, starts[1:])]
-    assert all(0.105 <= g <= 0.14 for g in gaps), gaps  # about hold (20) + pause (100) = 120 ms, not 170
+    # about hold (20) + pause (100) = 120 ms, not 170 (the clock on Windows and Mac is coarse, so allow some slack)
+    assert sorted(gaps)[len(gaps) // 2] <= 0.145 and all(0.1 <= g < 0.16 for g in gaps), gaps
