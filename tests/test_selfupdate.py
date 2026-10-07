@@ -217,13 +217,22 @@ def test_mac_helper_puts_the_old_app_back_if_the_swap_fails(tmp_path):
     assert "could not be moved into place" in log.read_text() and wait_for(marker)
 
 
+def env_with_gits_tools_first():
+    """The environment of a PC with Git installed: Git's own `find` and friends come before Windows' (they did on the
+    build machine, and made the helper think Ultrebo had closed when it hadn't)."""
+    env = dict(os.environ)
+    git_tools = r"C:\Program Files\Git\usr\bin"
+    env["PATH"] = git_tools + os.pathsep + env.get("PATH", "")
+    return env
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="the Windows helper is a batch file")
 def test_windows_helper_copies_the_new_files_over_and_reopens(tmp_path):
     target, staging, staged = build_tree(tmp_path, "Ultrebo")
     marker = tmp_path / "relaunched.txt"
     script = tmp_path / "update.bat"
     script.write_text(selfupdate.windows_script(finished_pid(), staged, target, staging, tmp_path / "log.txt", f'echo done > "{marker}"'))
-    subprocess.run(["cmd", "/c", str(script)], check=True, timeout=60)
+    subprocess.run(["cmd", "/c", str(script)], check=True, timeout=60, env=env_with_gits_tools_first())
     assert wait_for(marker)
     assert (target / "added.txt").exists() and (target / "keep.txt").read_text() == "new version"
     assert (target / "old.txt").exists()  # files are copied over the old ones, nothing is deleted
@@ -238,7 +247,7 @@ def test_windows_helper_closes_an_ultrebo_that_will_not_close_and_still_installs
     try:
         script = tmp_path / "update.bat"
         script.write_text(selfupdate.windows_script(stuck.pid, staged, target, staging, log, f'echo done > "{marker}"', grace_s=2))
-        subprocess.run(["cmd", "/c", str(script)], check=True, timeout=60)
+        subprocess.run(["cmd", "/c", str(script)], check=True, timeout=60, env=env_with_gits_tools_first())
         assert wait_for(marker)
         assert stuck.poll() is not None  # it was closed
         assert (target / "added.txt").exists()
@@ -415,3 +424,12 @@ def test_a_failed_update_is_reported_once(tmp_path, monkeypatch):
     old = time.time() - 7200
     os.utime(log, (old, old))
     assert selfupdate.last_update_problem() is None  # an old failure isn't news
+
+
+def test_the_windows_script_never_relies_on_whatever_program_the_path_finds_first():
+    text = selfupdate.windows_script(1, Path("a"), Path("b"), Path("c"), Path("log"), "echo hi")
+    for tool in ("tasklist", "find", "ping", "taskkill", "robocopy"):
+        for line in text.splitlines():
+            for word in line.replace('"', " ").replace("|", " ").split():
+                if word.lower() in (tool, tool + ".exe"):
+                    raise AssertionError(f"{tool} is used without its full path: {line}")

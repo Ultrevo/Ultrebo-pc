@@ -523,8 +523,8 @@ def _run_with_user(window, monkeypatch, step, outcome, do_pick, rule=False, is_n
     monkeypatch.setattr(context_module, "PickerOverlay", _FakePicker)
     dialog = StepDialog(window.ctx, step, window, is_new=is_new, rule=rule)
     QTimer.singleShot(50, lambda: do_pick(dialog))
-    QTimer.singleShot(900, dialog._accept)  # "the user presses Save" once the picker is gone
-    QTimer.singleShot(4000, dialog.reject)  # never hang a test run
+    dialog.pick_finished.connect(lambda: QTimer.singleShot(150, dialog._accept))  # "the user presses Save" afterwards
+    QTimer.singleShot(20000, dialog.reject)  # never hang a test run
     return dialog, dialog.exec()
 
 
@@ -541,8 +541,8 @@ def test_picking_an_image_and_then_saving_adds_the_step(window, monkeypatch):
     def init(self, *a, **k):
         original_init(self, *a, **k)
         QTimer.singleShot(50, self.pick_image.click)
-        QTimer.singleShot(900, self._accept)
-        QTimer.singleShot(4000, self.reject)
+        self.pick_finished.connect(lambda: QTimer.singleShot(150, self._accept))  # Save once the pick is over
+        QTimer.singleShot(20000, self.reject)
 
     monkeypatch.setattr(StepDialog, "__init__", init)
     window.add_step(StepType.IMAGE)
@@ -570,8 +570,8 @@ def test_picking_a_position_while_editing_keeps_the_edit(window, monkeypatch):
     def init(self, *a, **k):
         original_init(self, *a, **k)
         QTimer.singleShot(50, lambda: self._pick_point(self.c_x, self.c_y))
-        QTimer.singleShot(900, lambda: (self.name.setText("Moved"), self._accept()))
-        QTimer.singleShot(4000, self.reject)
+        self.pick_finished.connect(lambda: QTimer.singleShot(150, lambda: (self.name.setText("Moved"), self._accept())))
+        QTimer.singleShot(20000, self.reject)
 
     monkeypatch.setattr(StepDialog, "__init__", init)
     window.edit_step()

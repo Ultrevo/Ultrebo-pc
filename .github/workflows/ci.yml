@@ -34,6 +34,7 @@ jobs:
           pip uninstall -y opencv-python
           pip install --force-reinstall --no-deps opencv-python-headless
       - name: Tests
+        shell: bash  # the same shell the release build runs the tests in (it puts Git's own tools on the path)
         run: python -m pytest -q
 
   package:

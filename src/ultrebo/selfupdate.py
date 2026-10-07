@@ -155,6 +155,8 @@ def windows_script(
     pid: int, staged: Path, target: Path, staging: Path, log: Path, relaunch: str, grace_s: int = 20
 ) -> str:
     # Every line is run as it is reached (no parenthesised blocks), so the counters below really count.
+    # The Windows tools are named in full: on a PC with Git installed, a bare `find` can be Git's own, which is a
+    # different program and made this script think Ultrebo had already closed.
     return f"""@echo off
 setlocal
 title Updating Ultrebo
@@ -164,23 +166,23 @@ echo %date% %time% waiting for Ultrebo to close> "{log}"
 set "PID={pid}"
 set /a tries=0
 :wait
-tasklist /FI "PID eq %PID%" /NH 2>nul | find "%PID%" >nul
+"%SystemRoot%\\System32\\tasklist.exe" /FI "PID eq %PID%" /NH 2>nul | "%SystemRoot%\\System32\\find.exe" "%PID%" >nul
 if errorlevel 1 goto copy
 set /a tries+=1
 if %tries% GTR {grace_s} goto kill
-ping -n 2 127.0.0.1 >nul
+"%SystemRoot%\\System32\\ping.exe" -n 2 127.0.0.1 >nul
 goto wait
 :kill
 echo %date% %time% Ultrebo did not close by itself, closing it>> "{log}"
-taskkill /F /PID %PID% >nul 2>&1
-ping -n 3 127.0.0.1 >nul
+"%SystemRoot%\\System32\\taskkill.exe" /F /PID %PID% >nul 2>&1
+"%SystemRoot%\\System32\\ping.exe" -n 3 127.0.0.1 >nul
 :copy
 echo %date% %time% copying the new files>> "{log}"
-ping -n 2 127.0.0.1 >nul
+"%SystemRoot%\\System32\\ping.exe" -n 2 127.0.0.1 >nul
 set /a attempts=0
 :again
 set /a attempts+=1
-robocopy "{staged}" "{target}" /E /R:10 /W:1 /NFL /NDL /NJH /NJS /NP >> "{log}" 2>&1
+"%SystemRoot%\\System32\\robocopy.exe" "{staged}" "{target}" /E /R:10 /W:1 /NFL /NDL /NJH /NJS /NP >> "{log}" 2>&1
 if %ERRORLEVEL% LSS 8 goto copied
 echo %date% %time% copy attempt %attempts% failed>> "{log}"
 if %attempts% LSS 4 goto again
@@ -189,7 +191,7 @@ echo The new files could not be copied in (something was still using the old one
 echo Ultrebo will open again as the old version. Download the new version from the release page instead.
 echo The update log is here: {log}
 echo %date% %time% UPDATE FAILED>> "{log}"
-ping -n 8 127.0.0.1 >nul
+"%SystemRoot%\\System32\\ping.exe" -n 8 127.0.0.1 >nul
 goto launch
 :copied
 echo %date% %time% update installed>> "{log}"
