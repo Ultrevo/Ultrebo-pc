@@ -26,6 +26,7 @@ from .context import AppContext
 from .dialogs import AboutDialog, SettingsDialog
 from .rules_tab import RulesTab
 from .tablefill import fast_fill
+from .toast import Toast
 from .setup_guide import SetupCard
 from .step_dialog import StepDialog
 from .update_flow import UpdateJob
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
         self.hotkeys = hotkeys
         self.store = ctx.store
         self.store.on_save_error = self._on_save_error
+        self.toast = Toast()  # shown over the game, which is where the hotkeys are used
         self.recorder: Recorder | None = None
         self._running = False
         self._current_id: str | None = None
@@ -127,7 +129,8 @@ class MainWindow(QMainWindow):
         v.addWidget(label)
         hint = QLabel(
             "Click New, then record your inputs or add steps by hand.\n"
-            "Hotkeys work even while a game is in front: F8 starts and stops, F9 records."
+            f"Hotkeys work even while a game is in front: {self.store.settings.start_stop_hotkey.upper()} starts and stops, "
+            f"{self.store.settings.record_hotkey.upper()} records."
         )
         hint.setProperty("muted", True)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -624,24 +627,35 @@ class MainWindow(QMainWindow):
             return
         self._minimize_then(lambda: self._report(self.ctx.runner.start(macro)))
 
+    def _tell(self, text: str, problem: bool = False) -> None:
+        """Say something in the status bar and, where a game is in front, on a notice over the screen."""
+        self.status_label.setText(text)
+        self.toast.show_message(text)
+        if problem:
+            QApplication.beep()
+
     def toggle_run(self) -> None:
         """Start or stop from the global hotkey (no delay: the game is already in front)."""
+        start_key = self.store.settings.start_stop_hotkey.upper()
         if self.recorder is not None and self.recorder.recording:
+            self._tell(f"Recording is on: press {self.store.settings.record_hotkey.upper()} to stop it first", problem=True)
             return
         if self._running:
             self.ctx.runner.stop()
             return
         macro = self._macro()
         if macro is None:
-            self.bridge.status.emit("Select a macro first")
+            self._tell("Open or create a macro in Ultrebo first", problem=True)
             return
         error = self.ctx.runner.start(macro)
         if error:
-            self.bridge.status.emit(error)
+            self._tell(f"Can't start: {error}", problem=True)
+        else:
+            self.toast.show_message(f"Running \"{macro.name}\" - press {start_key} to stop")
 
     def toggle_record(self) -> None:
         if self._running:
-            self.bridge.status.emit("Stop the macro before recording")
+            self._tell(f"Stop the macro first ({self.store.settings.start_stop_hotkey.upper()})", problem=True)
             return
         if self.recorder is not None and self.recorder.recording:
             self._finish_recording()
@@ -665,6 +679,7 @@ class MainWindow(QMainWindow):
             return
         self.record_button.setText("Stop recording")
         self.status_label.setText(f"Recording... press {self.store.settings.record_hotkey.upper()} to stop")
+        self.toast.show_message(f"Recording - press {self.store.settings.record_hotkey.upper()} to stop")
         self.showMinimized()
 
     def _finish_recording(self) -> None:
@@ -679,6 +694,7 @@ class MainWindow(QMainWindow):
         self._load_editor()
         self._restore()
         self.status_label.setText(f"Recorded {len(steps)} step(s)")
+        self.toast.show_message(f"Recorded {len(steps)} step(s)")
 
     # ----------------------------------------------------------------- signals
 
@@ -691,10 +707,13 @@ class MainWindow(QMainWindow):
         self.start_button.style().polish(self.start_button)
 
     def _on_state(self, running: bool) -> None:
+        was_running = self._running
         self._running = running
         self._refresh_start_button()
         if not running:
             self.status_label.setText("Stopped")
+            if was_running:
+                self.toast.show_message("Stopped")
 
     def _on_status(self, text: str) -> None:
         if text:
@@ -825,7 +844,7 @@ class MainWindow(QMainWindow):
                 self.store.settings.record_hotkey: self.bridge.toggle_record.emit,
             })
         except Exception as e:  # noqa: BLE001
-            self.status_label.setText(f"Hotkeys unavailable: {e}")
+            self._tell(f"Hotkeys unavailable: {e}", problem=True)
 
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.store.settings, self, self.ctx.screen)
@@ -840,4 +859,6 @@ class MainWindow(QMainWindow):
             self.recorder.stop()
         if self.hotkeys is not None:
             self.hotkeys.stop()
+        self.toast.hide()
+        self.toast.deleteLater()
         super().closeEvent(event)

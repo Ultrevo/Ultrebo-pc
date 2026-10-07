@@ -770,3 +770,46 @@ def test_filling_a_table_puts_the_column_sizing_and_signals_back(qapp):
     table.setItem(1, 0, QTableWidgetItem("b"))
     assert len(seen) == 1  # signals work again afterwards
     table.deleteLater()
+
+
+# ------------------------------------------------------------------ hotkey results are shown over the game
+
+def test_the_start_hotkey_always_says_what_it_did(window, monkeypatch):
+    monkeypatch.setattr(QApplication, "beep", lambda: None)
+    window.new_macro()
+    window.toggle_run()  # a macro with nothing in it can't start
+    assert window.toast.isVisible() and "Can't start" in window.toast.text() and "no enabled steps" in window.toast.text()
+    assert "Can't start" in window.status_label.text()
+
+    macro = window._macro()
+    macro.steps = [Step(type=StepType.CLICK, x=1, y=1, name="A", priority=10, delay_after_ms=2000)]
+    window.toast.hide()
+    window.toggle_run()
+    assert window.toast.isVisible() and "Running" in window.toast.text() and "F8" in window.toast.text()
+    window.toast.hide()
+    window.toggle_run()  # pressing it again stops it
+    from conftest import wait_until
+
+    assert wait_until(lambda: (QApplication.processEvents(), not window._running)[1], timeout=5)
+    assert window.toast.isVisible() and window.toast.text() == "Stopped"
+
+
+def test_no_macro_selected_is_reported_too(window, monkeypatch):
+    monkeypatch.setattr(QApplication, "beep", lambda: None)
+    window._current_id = None
+    window.toggle_run()
+    assert window.toast.isVisible() and "macro" in window.toast.text()
+
+
+def test_the_notice_does_not_take_the_keyboard_focus(qapp):
+    from PySide6.QtCore import Qt
+
+    from ultrebo.ui.toast import Toast
+
+    toast = Toast()
+    toast.show_message("hello", ms=50)
+    flags = toast.windowFlags()
+    assert flags & Qt.WindowType.WindowDoesNotAcceptFocus and flags & Qt.WindowType.WindowStaysOnTopHint
+    assert toast.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+    toast.hide()
+    toast.deleteLater()

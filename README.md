@@ -168,6 +168,7 @@ The code is open and the downloads are built by GitHub from it, so you can read 
 | Problem | Fix |
 | --- | --- |
 | Something didn't save, or a button did nothing | Look for `error.log` in Ultrebo's data folder (`%APPDATA%\Ultrebo` on Windows) and send it to us on Discord. Ultrebo also tells you if it can't write your macros to disk. |
+| F8 (or the record hotkey) does nothing | Each press shows a small notice over the screen: *Running...*, *Stopped*, or *Can't start: why*. **If no notice appears, Windows isn't passing the key to Ultrebo.** That happens when the game or another program runs **as administrator** and Ultrebo doesn't: right-click Ultrebo and choose *Run as administrator*. You can also pick a different key in *Settings*. |
 | Clicks land in the wrong place | Don't move or resize the game window after recording. On Windows, keep display scaling the same as when you recorded. Re-record if in doubt. |
 | A game ignores the clicks (Windows) | Run Ultrebo as administrator. Some games with anti-cheat block simulated input entirely; nothing here works around that. |
 | Nothing happens on a Mac | Check Accessibility and Input Monitoring are on for Ultrebo, then restart it. |
