@@ -70,7 +70,7 @@ def test_a_nudged_click_moves_with_real_input_and_ends_exactly_on_the_target(mon
     log = []
     backend = make_backend(True, monkeypatch, log)
     backend.click(300, 200, nudge=True)
-    assert ("by", 2, 1) in log and ("by", -2, -1) in log  # a push of the mouse, then back
+    assert ("by", *inputs.PUSH) in log and ("by", -inputs.PUSH[0], -inputs.PUSH[1]) in log  # a push of the mouse, then back
     last_move = [e for e in log if e[0] == "to"][-1]
     assert last_move == ("to", 300, 200)
     assert backend._mouse_ctl.events == [("press", (300, 200)), ("release", (300, 200))]

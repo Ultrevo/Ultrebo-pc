@@ -8,6 +8,7 @@ into steps is plain code in `events_to_steps`, so it can be tested without any d
 from __future__ import annotations
 
 import math
+import statistics
 import threading
 import time
 from dataclasses import dataclass
@@ -34,12 +35,44 @@ class _Timed:
     step: Step
     start: float
     end: float
+    #: For a run of repeated key presses that was joined into one step: the pause between the presses.
+    fixed_delay_ms: int | None = None
 
 
 MIN_DELAY_MS = 30
 LAST_DELAY_MS = 500
 DOUBLE_CLICK_S = 0.35
 SCROLL_JOIN_S = 0.25
+#: The same key pressed again within this long counts as one run of fast presses (joined into a single repeated step).
+KEY_GROUP_GAP_S = 0.5
+
+
+def _join_repeated_keys(timed: list[_Timed]) -> list[_Timed]:
+    """Turn a run of the same key pressed over and over, with nothing else in between, into one step with a repeat
+    count. The press length and the pause between presses become the typical (median) ones of the run."""
+    joined: list[_Timed] = []
+    i = 0
+    while i < len(timed):
+        first = timed[i]
+        run = [first]
+        if first.step.type is StepType.KEY:
+            while (
+                i + len(run) < len(timed)
+                and timed[i + len(run)].step.type is StepType.KEY
+                and timed[i + len(run)].step.keys == first.step.keys
+                and timed[i + len(run)].start - run[-1].end <= KEY_GROUP_GAP_S
+            ):
+                run.append(timed[i + len(run)])
+        i += len(run)
+        if len(run) == 1:
+            joined.append(first)
+            continue
+        gaps = [max(int((b.start - a.end) * 1000), MIN_DELAY_MS) for a, b in zip(run, run[1:])]
+        step = first.step
+        step.repeat = len(run)
+        step.hold_ms = int(statistics.median(r.step.hold_ms for r in run))
+        joined.append(_Timed(step, first.start, run[-1].end, fixed_delay_ms=int(statistics.median(gaps))))
+    return joined
 
 
 def events_to_steps(events: list[RawEvent], slop: int = 8, first_priority: int = 10) -> list[Step]:
@@ -121,9 +154,12 @@ def events_to_steps(events: list[RawEvent], slop: int = 8, first_priority: int =
                 timed.append(_Timed(step, started, ev.t))
 
     timed.sort(key=lambda t: t.start)
+    timed = _join_repeated_keys(timed)
     steps: list[Step] = []
     for i, item in enumerate(timed):
-        if i + 1 < len(timed):
+        if item.fixed_delay_ms is not None:
+            item.step.delay_after_ms = item.fixed_delay_ms
+        elif i + 1 < len(timed):
             gap = int((timed[i + 1].start - item.end) * 1000)
             item.step.delay_after_ms = max(gap, MIN_DELAY_MS)
         else:

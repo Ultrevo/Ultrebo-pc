@@ -66,6 +66,8 @@ Not packaged yet. It can run from source on X11 (see [MAINTAINING.md](MAINTAININ
 4. Press **F8** (or **Start**) to run the macro. Press **F8** again to stop. **F8** is your safety brake, so
    check it works before you leave a macro running.
 
+If you press the same key over and over quickly (mashing a key, for example), the recording joins them into **one step with a repeat count** (such as `Press e x100`), using the typical press length and the typical pause between presses. Change the repeat in the step's settings.
+
 Tips: play in **windowed mode**, and don't move or resize the game window between recording and running,
 because clicks are recorded as screen positions.
 

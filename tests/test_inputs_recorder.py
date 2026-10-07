@@ -93,3 +93,40 @@ def test_update_parsing():
     assert updater.parse_release(body, "0.2.0") is None
     assert updater.parse_release('{"tag_name":"v9","html_url":"https://evil.example/x"}', "0.1.0") is None
     assert updater.parse_release("not json", "0.1.0") is None
+
+
+def key_press(t, key, hold=0.05):
+    return [ev("key_down", t, key=key), ev("key_up", t + hold, key=key)]
+
+
+def test_a_fast_run_of_the_same_key_becomes_one_step_with_a_repeat_count():
+    events = []
+    for i in range(100):
+        events += key_press(10 + i * 0.1, "e", hold=0.04 + (i % 3) * 0.01)  # 100 presses, about 0.1 s apart
+    steps = events_to_steps(events)
+    assert len(steps) == 1
+    s = steps[0]
+    assert (s.keys, s.repeat) == ("e", 100)
+    assert s.hold_ms == 50  # the typical press length
+    assert 45 <= s.delay_after_ms <= 55  # the typical pause between presses (about 50 ms here)
+    assert "x100" in s.summary()
+
+
+def test_slow_or_different_keys_are_not_joined():
+    events = key_press(1, "a") + key_press(1.2, "a") + key_press(5, "a") + key_press(5.1, "b") + key_press(5.2, "a")
+    steps = events_to_steps(events)
+    assert [(s.keys, s.repeat) for s in steps] == [("a", 2), ("a", 1), ("b", 1), ("a", 1)]
+
+
+def test_a_click_in_between_stops_the_run():
+    events = key_press(1, "a") + [ev("mouse_down", 1.1, x=5, y=5), ev("mouse_up", 1.15, x=5, y=5)] + key_press(1.2, "a")
+    assert [s.type.value for s in events_to_steps(events)] == ["key", "click", "key"]
+
+
+def test_a_combination_repeats_as_one_step_too():
+    events = []
+    for i in range(3):
+        t = 1 + i * 0.3
+        events += [ev("key_down", t, key="ctrl"), ev("key_down", t + 0.01, key="s"), ev("key_up", t + 0.05, key="s"), ev("key_up", t + 0.06, key="ctrl")]
+    steps = events_to_steps(events)
+    assert [(s.keys, s.repeat) for s in steps] == [("ctrl+s", 3)]

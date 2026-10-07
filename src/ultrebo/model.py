@@ -157,7 +157,8 @@ class Step:
         if self.type is StepType.SCROLL:
             return f"Scroll {self.scroll_dy:+d} (horizontal {self.scroll_dx:+d})" if self.scroll_dx else f"Scroll {self.scroll_dy:+d}"
         if self.type is StepType.KEY:
-            return f"Press {self.keys or '(no key)'}"
+            times = f" x{self.repeat}" if self.repeat > 1 else ""
+            return f"Press {self.keys or '(no key)'}{times}"
         target = "image" if self.is_image else f'"{self.text}"'
         if self.is_image and not self.template_file:
             return "no image picked"

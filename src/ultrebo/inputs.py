@@ -86,8 +86,13 @@ class Aborted(Exception):
 
 
 GLIDE_STEPS = 8
-#: Offsets (pixels) of the little wiggle before a nudged click; it always ends exactly on the target.
-WIGGLE = ((3, 2), (-3, -2), (2, -1), (0, 0))
+#: The wiggle before a nudged click is tiny: it never goes further than this many pixels from the target, and no
+#: single move of it is longer than this either.
+WIGGLE_MAX_PX = 3
+#: Offsets (pixels) of the little wiggle; it always ends exactly on the target.
+WIGGLE = ((1, 1), (-1, -1), (1, -1), (0, 0))
+#: The small push the real mouse is given on Windows (and then taken back), in pixels.
+PUSH = (1, 0)
 
 
 class InputBackend(Protocol):
@@ -169,9 +174,9 @@ class PynputInput:
         if self._real_mouse:
             # games that read raw mouse movement want to see a small push of the mouse, then back on the spot
             try:
-                winmouse.move_by(2, 1)
+                winmouse.move_by(*PUSH)
                 self._nap(0.012)
-                winmouse.move_by(-2, -1)
+                winmouse.move_by(-PUSH[0], -PUSH[1])
                 self._nap(0.012)
             except Aborted:
                 raise

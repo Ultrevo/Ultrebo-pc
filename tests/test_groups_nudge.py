@@ -74,6 +74,18 @@ def test_a_nudged_click_glides_in_and_wiggles_before_it_clicks():
     assert [e[0] for e in mouse.events] == ["press", "release"] and all(e[1] == (200, 150) for e in mouse.events)
 
 
+def test_the_wiggle_is_tiny():
+    """It never strays more than 3 pixels from the target, and no single move of it is longer than 3 pixels."""
+    mouse = FakeMouse(start=(900, 700))
+    real_input(mouse).click(200, 150, hold_ms=1, nudge=True)
+    wiggle = mouse.moves[1 + inputs.GLIDE_STEPS - 1:]  # from arriving on the target
+    assert all(abs(x - 200) ** 2 + abs(y - 150) ** 2 <= inputs.WIGGLE_MAX_PX ** 2 for x, y in wiggle)
+    assert all(
+        (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 <= inputs.WIGGLE_MAX_PX ** 2 for a, b in zip(wiggle, wiggle[1:])
+    )
+    assert inputs.PUSH[0] ** 2 + inputs.PUSH[1] ** 2 <= inputs.WIGGLE_MAX_PX ** 2
+
+
 def test_a_plain_click_still_just_places_the_cursor():
     mouse = FakeMouse()
     real_input(mouse).click(200, 150, hold_ms=1)
