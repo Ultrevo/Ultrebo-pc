@@ -14,6 +14,19 @@ import sys
 EXTENDED_PREFIXES = (0xE0, 0xE1)
 
 
+#: Keys that must be sent as "extended" even though Windows' scan-code lookup doesn't say so for them (the arrow keys share
+#: scan codes with the number pad, and without the flag they would be read as number pad keys).
+EXTENDED_VKS = frozenset({
+    0x21, 0x22, 0x23, 0x24,  # page up, page down, end, home
+    0x25, 0x26, 0x27, 0x28,  # left, up, right, down
+    0x2C, 0x2D, 0x2E,  # print screen, insert, delete
+    0x5B, 0x5C, 0x5D,  # left and right Windows keys, menu
+    0x6F, 0x90,  # number pad divide, num lock
+    0xA3, 0xA5,  # right ctrl, right alt
+    0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3,  # volume and media keys
+})
+
+
 def split_scan(mapped: int) -> tuple[int, bool]:
     """Windows' answer for a key -> (scan code, is it an extended key). 0 means the key has no scan code."""
     return mapped & 0xFF, (mapped >> 8) in EXTENDED_PREFIXES
@@ -54,7 +67,7 @@ if sys.platform == "win32":
     def scan_for_vk(vk: int) -> tuple[int, bool] | None:
         """(scan code, extended) for a virtual-key code, or None when Windows has none."""
         scan, extended = split_scan(_user32.MapVirtualKeyW(vk, _MAPVK_VK_TO_VSC_EX))
-        return (scan, extended) if scan else None
+        return (scan, extended or vk in EXTENDED_VKS) if scan else None
 
     def vk_for_char(char: str) -> int | None:
         """The virtual-key code that types `char` with no modifier keys, or None if it needs shift/ctrl/alt (or doesn't exist)."""
