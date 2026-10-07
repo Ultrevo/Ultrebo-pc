@@ -133,9 +133,13 @@ def events_to_steps(events: list[RawEvent], slop: int = 8, first_priority: int =
     return steps
 
 
-def _key_name(canonical_key) -> str:
-    """Our name for a pynput key (e.g. Key.ctrl_l -> "ctrl", KeyCode('a') -> "a")."""
-    name = getattr(canonical_key, "name", None)
+def _key_name(canonical_key, raw_key=None) -> str:
+    """Our name for a pynput key (e.g. Key.ctrl_l -> "ctrl", KeyCode('a') -> "a").
+
+    `raw_key` is the key as it arrived. pynput's "canonical" form turns Enter, Esc, Tab, Space, the arrows and the other
+    named keys into a plain code with no name, so those have to be named from the raw key or they are lost.
+    """
+    name = getattr(raw_key, "name", None) or getattr(canonical_key, "name", None)
     if name:
         for suffix in ("_l", "_r", "_gr"):
             if name.endswith(suffix):
@@ -187,12 +191,12 @@ class Recorder:
         self._key_listener = keyboard.Listener(on_press=None, on_release=None)
 
         def on_press(key):
-            name = _key_name(self._key_listener.canonical(key))
+            name = _key_name(self._key_listener.canonical(key), key)
             if name and name not in self.ignore_keys:
                 add(RawEvent("key_down", time.monotonic(), key=name))
 
         def on_release(key):
-            name = _key_name(self._key_listener.canonical(key))
+            name = _key_name(self._key_listener.canonical(key), key)
             if name and name not in self.ignore_keys:
                 add(RawEvent("key_up", time.monotonic(), key=name))
 

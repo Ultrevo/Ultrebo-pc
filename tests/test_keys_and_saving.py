@@ -182,3 +182,26 @@ def test_arrow_keys_and_friends_are_always_sent_as_extended_keys():
         assert vk in winkeys.EXTENDED_VKS
     for vk in (0x0D, 0x41, 0x20, 0x09, 0x1B, 0x11):  # enter, a, space, tab, esc, ctrl
         assert vk not in winkeys.EXTENDED_VKS
+
+
+# ------------------------------------------------------------------ recording the named keys
+
+def test_enter_esc_and_the_other_named_keys_are_recorded_by_their_raw_name():
+    from ultrebo.recorder import _key_name
+
+    plain_code = types.SimpleNamespace(vk=0x0D, char=None)  # what pynput's "canonical" form leaves of Enter: no name at all
+    assert _key_name(plain_code, types.SimpleNamespace(name="enter")) == "enter"
+    for raw in ("esc", "tab", "space", "backspace", "delete", "up", "down", "left", "right", "home", "end", "page_up",
+                "page_down", "insert", "caps_lock", "f5", "menu", "print_screen", "pause", "num_lock"):
+        name = _key_name(types.SimpleNamespace(vk=1, char=None), types.SimpleNamespace(name=raw))
+        assert name == raw and validate_key_spec(name) is None  # and the edit window accepts what was recorded
+
+
+def test_modifiers_and_letters_are_still_recorded_as_before():
+    from ultrebo.recorder import _key_name
+
+    assert _key_name(types.SimpleNamespace(name="ctrl"), types.SimpleNamespace(name="ctrl_l")) == "ctrl"
+    assert _key_name(types.SimpleNamespace(name="alt"), types.SimpleNamespace(name="alt_gr")) == "alt"
+    assert _key_name(types.SimpleNamespace(char="a", vk=65), types.SimpleNamespace(char="A", vk=65)) == "a"
+    assert _key_name(types.SimpleNamespace(char=None, vk=66), types.SimpleNamespace(char=None, vk=66)) == "b"
+    assert _key_name(types.SimpleNamespace(char=None, vk=0xFF), None) == ""  # a key we have no name for is skipped

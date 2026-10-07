@@ -9,7 +9,8 @@ It can also **look for a picture or for words on your screen** and react to them
 tasks such as tower-defense farming, and works with any program on Windows and macOS.
 
 - **Record** your mouse and keyboard with the pauses between them, then edit each step: position, wait, repeat, on/off, and a test button for each one.
-- **The list order is the run order.** Move a step with Up and Down.
+- **The list order is the run order.** Select a step, type the position you want in **Move to #** and press Enter (or click Move).
+- **Select several steps at once** by dragging over them, or Shift-click / Ctrl-click (Ctrl+A selects all). Delete, Duplicate and Move work on everything selected; the Delete key removes them too.
 - **Two run modes.** *Sequence* runs everything in order, looped. *Reactive* runs only the first step in the list whose condition is met.
 - **Find image.** Drag a box over your screen to pick a picture and Ultrebo clicks it whenever it appears.
 - **Find text.** Type words such as `I'm here`. Ultrebo reads the screen on your computer and clicks them when they show up.

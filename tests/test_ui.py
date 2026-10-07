@@ -598,3 +598,123 @@ def test_a_dialog_that_is_not_picking_behaves_as_before(window):
     QTimer.singleShot(50, d.reject)
     assert d.exec() == StepDialog.DialogCode.Rejected
     d.deleteLater()
+
+
+# ------------------------------------------------------------------ several steps at once, and "Move to #"
+
+def _steps_window(window, n=5):
+    window.new_macro()
+    macro = window._macro()
+    macro.steps = [Step(type=StepType.CLICK, x=i, y=i, name=f"S{i}", priority=(i + 1) * 10) for i in range(n)]
+    window.store.save()
+    window._load_editor()
+    return macro
+
+
+def _select_rows(window, *rows):
+    from PySide6.QtCore import QItemSelectionModel
+
+    window.table.clearSelection()
+    for row in rows:
+        window.table.selectionModel().select(
+            window.table.model().index(row, 0), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+        )
+
+
+def _names(window):
+    return [s.name for s in window._macro().ordered()]
+
+
+def test_the_table_lets_you_select_several_steps(window):
+    from PySide6.QtWidgets import QAbstractItemView
+
+    _steps_window(window)
+    assert window.table.selectionMode() is QAbstractItemView.SelectionMode.ExtendedSelection
+    _select_rows(window, 1, 2, 3)
+    assert [s.name for s in window._selected_steps()] == ["S1", "S2", "S3"]
+
+
+def test_deleting_several_steps_asks_once_and_removes_them_all(window, monkeypatch):
+    _steps_window(window)
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[2]) or QMessageBox.StandardButton.Yes)
+    _select_rows(window, 1, 2, 3)
+    window.delete_step()
+    assert _names(window) == ["S0", "S4"] and len(asked) == 1 and "3 steps" in asked[0]
+    assert MacroStore(window.store.folder).macros[0].steps and len(MacroStore(window.store.folder).macros[0].steps) == 2
+
+
+def test_deleting_several_steps_can_be_cancelled(window, monkeypatch):
+    _steps_window(window)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    _select_rows(window, 0, 1)
+    window.delete_step()
+    assert len(_names(window)) == 5
+
+
+def test_deleting_one_step_does_not_ask(window, monkeypatch):
+    _steps_window(window)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not ask")))
+    _select_rows(window, 2)
+    window.delete_step()
+    assert _names(window) == ["S0", "S1", "S3", "S4"]
+
+
+def test_duplicating_several_steps_puts_the_copies_after_the_last_one_in_order(window):
+    _steps_window(window, 4)
+    _select_rows(window, 1, 2)
+    window.duplicate_step()
+    assert _names(window) == ["S0", "S1", "S2", "S1", "S2", "S3"]
+    assert len({s.id for s in window._macro().steps}) == 6
+    assert [s.name for s in window._selected_steps()] == ["S1", "S2"]  # the copies are the ones left selected
+    assert window._selected_step_ids() == [s.id for s in window._macro().ordered()[3:5]]
+
+
+def test_move_to_number_puts_a_step_at_that_position(window):
+    _steps_window(window)
+    _select_rows(window, 3)
+    assert window.move_to.value() == 4  # the box shows where the selected step is now
+    window.move_to.setValue(2)
+    window.move_selected_to_number()
+    assert _names(window) == ["S0", "S3", "S1", "S2", "S4"]
+    assert [s.name for s in window._selected_steps()] == ["S3"]
+    window.move_to.setValue(1)
+    window.move_selected_to_number()
+    assert _names(window)[0] == "S3"
+    window.move_to.setValue(5)
+    window.move_selected_to_number()
+    assert _names(window)[-1] == "S3"
+    assert [s.priority for s in window._macro().ordered()] == [10, 20, 30, 40, 50]  # a real, saved order
+
+
+def test_move_to_number_moves_a_whole_selection_together(window):
+    _steps_window(window)
+    _select_rows(window, 1, 2)
+    window.move_to.setValue(4)
+    window.move_selected_to_number()
+    assert _names(window) == ["S0", "S3", "S4", "S1", "S2"]  # kept in their order, first one at the top of the block
+
+
+def test_a_number_past_the_end_just_means_the_end(window):
+    _steps_window(window)
+    _select_rows(window, 0)
+    window.move_selected_to(99)
+    assert _names(window) == ["S1", "S2", "S3", "S4", "S0"]
+    assert window.move_to.maximum() == 5
+
+
+def test_the_old_up_and_down_buttons_are_gone_and_the_number_box_is_there(window):
+    from PySide6.QtWidgets import QPushButton
+
+    _steps_window(window)
+    labels = {b.text() for b in window.tabs.widget(0).findChildren(QPushButton)}  # the Steps tab (Rules keeps its own Up/Down)
+    assert "Up" not in labels and "Down" not in labels and "Move" in labels
+
+
+def test_editing_or_testing_with_several_selected_does_nothing(window, monkeypatch):
+    _steps_window(window)
+    monkeypatch.setattr(StepDialog, "exec", lambda self: (_ for _ in ()).throw(AssertionError("should not open")))
+    _select_rows(window, 0, 1)
+    window.edit_step()
+    window.test_step()
+    assert "just one" in window.status_label.text()

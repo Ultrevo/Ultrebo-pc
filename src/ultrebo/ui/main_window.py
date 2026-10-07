@@ -9,8 +9,8 @@ import threading
 import uuid
 import webbrowser
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QItemSelectionModel, QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressDialog, QPushButton, QSpinBox, QStackedWidget, QTableWidget,
@@ -177,10 +177,21 @@ class MainWindow(QMainWindow):
         self.record_button.clicked.connect(self.toggle_record)
         bar.addWidget(self.record_button)
         bar.addStretch(1)
-        for text, slot in (
-            ("Edit", self.edit_step), ("Test", self.test_step), ("Up", lambda: self.move_step(-1)),
-            ("Down", lambda: self.move_step(1)), ("Duplicate", self.duplicate_step), ("Delete", self.delete_step),
-        ):
+        for text, slot in (("Edit", self.edit_step), ("Test", self.test_step)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            bar.addWidget(b)
+        bar.addWidget(QLabel("Move to #"))
+        self.move_to = QSpinBox()
+        self.move_to.setRange(1, 1)
+        self.move_to.setToolTip("Type the position you want the selected step(s) to have, then press Enter or click Move.")
+        self.move_to.setFixedWidth(70)
+        bar.addWidget(self.move_to)
+        self.move_button = QPushButton("Move")
+        self.move_button.clicked.connect(self.move_selected_to_number)
+        self.move_to.lineEdit().returnPressed.connect(self.move_selected_to_number)
+        bar.addWidget(self.move_button)
+        for text, slot in (("Duplicate", self.duplicate_step), ("Delete", self.delete_step)):
             b = QPushButton(text)
             b.clicked.connect(slot)
             bar.addWidget(b)
@@ -189,7 +200,8 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, len(self.COLUMNS))
         self.table.setHorizontalHeaderLabels(self.COLUMNS)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # Click and drag, or Shift-click / Ctrl-click, to select several steps; Ctrl+A selects them all.
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
@@ -201,6 +213,10 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemChanged.connect(self._item_changed)
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_step())
+        self.table.itemSelectionChanged.connect(self._selection_changed)
+        delete_key = QShortcut(QKeySequence(QKeySequence.StandardKey.Delete), self.table)
+        delete_key.setContext(Qt.ShortcutContext.WidgetShortcut)
+        delete_key.activated.connect(self.delete_step)
         v.addWidget(self.table, 1)
         self.steps_hint = QLabel("Runs top to bottom. Double-click a step to edit it.")
         self.steps_hint.setProperty("muted", True)
@@ -348,13 +364,15 @@ class MainWindow(QMainWindow):
         self._fill_table()
         self.rules_tab.refresh()
 
-    def _fill_table(self, select_id: str | None = None) -> None:
+    def _fill_table(self, select_id: str | None = None, select_ids: list[str] | None = None) -> None:
         macro = self._macro()
         if macro is None:
             return
-        previous = select_id or self._selected_step_id()
+        wanted = set(select_ids or ([select_id] if select_id else self._selected_step_ids()))
         self._loading = True
         ordered = macro.ordered()
+        self.move_to.setRange(1, max(len(ordered), 1))
+        self.table.clearSelection()
         self.table.setRowCount(len(ordered))
         for row, step in enumerate(ordered):
             on = QTableWidgetItem()
@@ -370,11 +388,16 @@ class MainWindow(QMainWindow):
                 if not step.enabled:
                     item.setForeground(Qt.GlobalColor.gray)
                 self.table.setItem(row, col, item)
-            if previous == step.id:
-                self.table.selectRow(row)
+            if step.id in wanted:
+                self.table.selectionModel().select(
+                    self.table.model().index(row, 0),
+                    QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                )
         self._loading = False
+        self._selection_changed()
         self.steps_hint.setText(
-            "Runs top to bottom. Use Up and Down to change the order. Double-click a step to edit it."
+            "Runs top to bottom. Drag or Shift/Ctrl-click to select several steps, type a number in Move to # to reorder, "
+            "double-click a step to edit it."
             if ordered else "No steps yet. Click Add step, or press Record and use your computer normally."
         )
         self._refresh_list_item()
@@ -391,18 +414,43 @@ class MainWindow(QMainWindow):
         if macro is not None and item is not None:
             item.setText(self._list_text(macro))
 
+    def _selected_step_ids(self) -> list[str]:
+        """Ids of every selected step, top to bottom."""
+        model = self.table.selectionModel()
+        rows = sorted(r.row() for r in model.selectedRows()) if model else []
+        ids = []
+        for row in rows:
+            item = self.table.item(row, 0)
+            if item is not None:
+                ids.append(item.data(Qt.ItemDataRole.UserRole))
+        return ids
+
     def _selected_step_id(self) -> str | None:
-        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        if not rows:
-            return None
-        item = self.table.item(rows[0].row(), 0)
-        return item.data(Qt.ItemDataRole.UserRole) if item else None
+        ids = self._selected_step_ids()
+        return ids[0] if ids else None
+
+    def _selected_steps(self) -> list[Step]:
+        macro = self._macro()
+        if macro is None:
+            return []
+        by_id = {s.id: s for s in macro.steps}
+        return [by_id[i] for i in self._selected_step_ids() if i in by_id]
 
     def _selected_step(self) -> Step | None:
-        macro, sid = self._macro(), self._selected_step_id()
-        if macro is None or sid is None:
-            return None
-        return next((s for s in macro.steps if s.id == sid), None)
+        steps = self._selected_steps()
+        return steps[0] if steps else None
+
+    def _selection_changed(self) -> None:
+        """Keep the "Move to #" box showing where the first selected step is now."""
+        if self._loading:
+            return
+        macro = self._macro()
+        first = self._selected_step_id()
+        if macro is None or first is None:
+            return
+        position = next((i for i, s in enumerate(macro.ordered(), start=1) if s.id == first), None)
+        if position is not None:
+            self.move_to.setValue(position)
 
     def _item_changed(self, item: QTableWidgetItem) -> None:
         if self._loading or item.column() != 0:
@@ -439,9 +487,12 @@ class MainWindow(QMainWindow):
         self._edit(step, is_new=True)
 
     def edit_step(self) -> None:
-        step = self._selected_step()
-        if step is not None:
-            self._edit(step, is_new=False)
+        steps = self._selected_steps()
+        if len(steps) > 1:
+            self.status_label.setText("Select just one step to edit it")
+            return
+        if steps:
+            self._edit(steps[0], is_new=False)
 
     def _edit(self, step: Step, is_new: bool) -> None:
         macro = self._macro()
@@ -462,22 +513,27 @@ class MainWindow(QMainWindow):
         self._fill_table(select_id=updated.id)
 
     def delete_step(self) -> None:
-        macro, step = self._macro(), self._selected_step()
-        if macro is None or step is None:
+        """Delete every selected step (asks first when more than one)."""
+        macro, steps = self._macro(), self._selected_steps()
+        if macro is None or not steps:
             return
-        if step.template_file:
-            self.store.delete_template(step.template_file)
-        macro.steps = [s for s in macro.steps if s.id != step.id]
+        if len(steps) > 1:
+            answer = QMessageBox.question(
+                self, "Delete steps", f"Delete these {len(steps)} steps? Their saved images are removed too. This cannot be undone.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        gone = {s.id for s in steps}
+        for step in steps:
+            if step.template_file:
+                self.store.delete_template(step.template_file)
+        macro.steps = [s for s in macro.steps if s.id not in gone]
         self.store.save()
         self._fill_table()
 
-    def duplicate_step(self) -> None:
-        macro, step = self._macro(), self._selected_step()
-        if macro is None or step is None:
-            return
+    def _clone_of(self, step: Step) -> Step:
         clone = copy.deepcopy(step)
         clone.id = uuid.uuid4().hex
-        clone.priority = step.priority + 1
         if step.template_file:
             name = self.store.new_template_name()
             try:
@@ -485,29 +541,54 @@ class MainWindow(QMainWindow):
                 clone.template_file = name
             except OSError:
                 clone.template_file = None
-        macro.steps.append(clone)
-        macro.renumber(macro.ordered())
+        return clone
+
+    def duplicate_step(self) -> None:
+        """Copy every selected step; the copies go right after the last selected one, in the same order."""
+        macro, steps = self._macro(), self._selected_steps()
+        if macro is None or not steps:
+            return
+        clones = [self._clone_of(s) for s in steps]
+        ordered = macro.ordered()
+        last = max(i for i, s in enumerate(ordered) if s.id in {x.id for x in steps})
+        ordered[last + 1:last + 1] = clones
+        macro.renumber(ordered)
         self.store.save()
-        self._fill_table(select_id=clone.id)
+        self._fill_table(select_ids=[c.id for c in clones])
+
+    def move_selected_to(self, position: int) -> None:
+        """Move the selected steps (kept in their order) so the first one lands at `position` (1 = the top)."""
+        macro, steps = self._macro(), self._selected_steps()
+        if macro is None or not steps:
+            return
+        chosen = {s.id for s in steps}
+        ordered = macro.ordered()
+        rest = [s for s in ordered if s.id not in chosen]
+        at = min(max(position, 1), len(rest) + 1) - 1
+        moved = [s for s in ordered if s.id in chosen]
+        rest[at:at] = moved
+        macro.renumber(rest)
+        self.store.save()
+        self._fill_table(select_ids=[s.id for s in moved])
+
+    def move_selected_to_number(self) -> None:
+        self.move_selected_to(self.move_to.value())
 
     def move_step(self, delta: int) -> None:
+        """One step up (-1) or down (+1). Not on a button any more, but handy for tests and scripts."""
         macro, step = self._macro(), self._selected_step()
         if macro is None or step is None:
             return
-        ordered = macro.ordered()
-        i = next(k for k, s in enumerate(ordered) if s.id == step.id)
-        j = i + delta
-        if j < 0 or j >= len(ordered):
-            return
-        ordered.insert(j, ordered.pop(i))
-        macro.renumber(ordered)
-        self.store.save()
-        self._fill_table(select_id=step.id)
+        position = next(i for i, s in enumerate(macro.ordered(), start=1) if s.id == step.id)
+        self.move_selected_to(position + delta)
 
     def test_step(self) -> None:
-        step = self._selected_step()
-        if step is not None:
-            self._test_step_object(step)
+        steps = self._selected_steps()
+        if len(steps) > 1:
+            self.status_label.setText("Select just one step to test it")
+            return
+        if steps:
+            self._test_step_object(steps[0])
 
     def _test_step_object(self, step: Step) -> None:
         self._minimize_then(lambda: self._report(self.ctx.runner.test_step(step)))
