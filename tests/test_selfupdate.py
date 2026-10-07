@@ -371,3 +371,18 @@ def test_check_update_command_line_reports_ok_and_failures(monkeypatch, tmp_path
 
     monkeypatch.setattr(updater, "check_detailed", lambda v: updater.CheckResult(None, latest="0.0.1"))
     assert app.check_update_cli(None) == 1 and "not seen as newer" in capsys.readouterr().out
+
+
+def test_a_failed_update_is_reported_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(selfupdate.tempfile, "gettempdir", lambda: str(tmp_path))
+    log = tmp_path / "ultrebo-update.log"
+    assert selfupdate.last_update_problem() is None  # no log: nothing to say
+    log.write_text("update installed\n")
+    assert selfupdate.last_update_problem() is None  # it worked
+    log.write_text("copy attempt 4 failed\nUPDATE FAILED\n")
+    assert "still the old version" in selfupdate.last_update_problem()
+    assert selfupdate.last_update_problem() is None  # said once
+    log.write_text("UPDATE FAILED\n")
+    old = time.time() - 7200
+    os.utime(log, (old, old))
+    assert selfupdate.last_update_problem() is None  # an old failure isn't news

@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -151,22 +152,42 @@ def prepare(
 # ---------------------------------------------------------------------------------------------- helper
 
 def windows_script(pid: int, staged: Path, target: Path, staging: Path, log: Path, relaunch: str) -> str:
+    # Every line is run as it is reached (no parenthesised blocks), so the counters below really count.
     return f"""@echo off
 setlocal
+title Updating Ultrebo
+echo Updating Ultrebo... please wait. It opens again by itself in a moment.
+echo Please don't open Ultrebo yourself until then.
+echo %date% %time% waiting for Ultrebo to close> "{log}"
 set "PID={pid}"
 set /a tries=0
 :wait
 tasklist /FI "PID eq %PID%" /NH 2>nul | find "%PID%" >nul
-if not errorlevel 1 (
-  set /a tries+=1
-  if %tries% GTR 120 goto copy
-  ping -n 2 127.0.0.1 >nul
-  goto wait
-)
-:copy
+if errorlevel 1 goto copy
+set /a tries+=1
+if %tries% GTR 120 goto copy
 ping -n 2 127.0.0.1 >nul
-robocopy "{staged}" "{target}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >"{log}" 2>&1
-if %ERRORLEVEL% GEQ 8 echo The files could not be copied. >>"{log}"
+goto wait
+:copy
+echo %date% %time% copying the new files>> "{log}"
+ping -n 2 127.0.0.1 >nul
+set /a attempts=0
+:again
+set /a attempts+=1
+robocopy "{staged}" "{target}" /E /R:10 /W:1 /NFL /NDL /NJH /NJS /NP >> "{log}" 2>&1
+if %ERRORLEVEL% LSS 8 goto copied
+echo %date% %time% copy attempt %attempts% failed>> "{log}"
+if %attempts% LSS 4 goto again
+echo.
+echo The new files could not be copied in (something was still using the old ones).
+echo Ultrebo will open again as the old version. Download the new version from the release page instead.
+echo The update log is here: {log}
+echo %date% %time% UPDATE FAILED>> "{log}"
+ping -n 8 127.0.0.1 >nul
+goto launch
+:copied
+echo %date% %time% update installed>> "{log}"
+:launch
 {relaunch}
 rmdir /S /Q "{staging}" >nul 2>&1
 """
@@ -201,6 +222,25 @@ rm -rf {q(str(staging))}
 """
 
 
+def last_update_problem(max_age_s: float = 1800.0) -> str | None:
+    """If the update helper recently reported that it couldn't install the new files, say so (once)."""
+    log = Path(tempfile.gettempdir()) / "ultrebo-update.log"
+    try:
+        if time.time() - log.stat().st_mtime > max_age_s:
+            return None
+        text = log.read_text(encoding="utf-8", errors="replace")
+        if "UPDATE FAILED" not in text:
+            return None
+        log.replace(log.with_suffix(".seen.log"))  # only tell them once
+    except OSError:
+        return None
+    return (
+        "The last update could not be installed, so this is still the old version. "
+        "Some files were probably still in use. Please download the new version from the release page "
+        f"and unzip it over this one.\n\nThe update log is at:\n{log}"
+    )
+
+
 def apply(prepared: PreparedUpdate) -> None:
     """Start the helper that swaps the new version in once this process has exited, then reopens Ultrebo.
 
@@ -212,7 +252,8 @@ def apply(prepared: PreparedUpdate) -> None:
         text = windows_script(pid, prepared.staged, prepared.target, prepared.staging_dir, log, relaunch)
         script = prepared.staging_dir / "update.bat"
         script.write_text(text, encoding="utf-8")
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        # A small window of its own, so there is something on screen saying the update is being installed.
+        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         # The script lives in the staging folder, which it deletes last, so run a copy from the temp folder.
         runner = Path(tempfile.gettempdir()) / f"ultrebo-update-{pid}.bat"
         shutil.copyfile(script, runner)

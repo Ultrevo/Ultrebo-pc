@@ -92,6 +92,37 @@ jobs:
       - name: Update-check test (macOS)
         if: runner.os == 'macOS'
         run: dist/Ultrebo.app/Contents/MacOS/Ultrebo --check-update "$RUNNER_TEMP/checkupdate.txt"
+      - name: Update test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # Does what "Update now" does after the download: the installed app starts the helper and quits; the
+          # helper must copy the new files over it and open it again.
+          $root = Join-Path $env:RUNNER_TEMP "updatetest"
+          $installed = Join-Path $root "installed\Ultrebo"
+          $staging = Join-Path $root "staging"
+          New-Item -ItemType Directory -Force (Split-Path $installed) | Out-Null
+          Copy-Item -Recurse dist/Ultrebo $installed
+          Copy-Item -Recurse dist/Ultrebo (Join-Path $staging "Ultrebo")
+          "new" | Set-Content (Join-Path $staging "Ultrebo\added-by-update.txt")
+          $old = Start-Process -FilePath (Join-Path $installed "Ultrebo.exe") -ArgumentList "--update-selftest", $installed, $staging -PassThru
+          if (-not $old.WaitForExit(60000)) { $old.Kill(); throw "The app did not close itself after starting the update" }
+          $copied = Join-Path $installed "added-by-update.txt"
+          $reopened = $null
+          for ($i = 0; $i -lt 90; $i++) {
+            $reopened = Get-Process Ultrebo -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $old.Id } | Select-Object -First 1
+            if ((Test-Path $copied) -and $reopened) { break }
+            Start-Sleep -Seconds 1
+          }
+          $log = Join-Path $env:TEMP "ultrebo-update.log"
+          if (Test-Path $log) { Write-Host "--- helper log"; Get-Content $log }
+          if ($reopened) { $reopened.Kill() }
+          if (-not (Test-Path $copied)) { throw "The helper did not copy the new files in" }
+          if (-not $reopened) { throw "The helper did not open Ultrebo again" }
+          if (Test-Path $staging) { throw "The helper left its staging folder behind" }
+          Write-Host "update test: ok"
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

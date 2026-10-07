@@ -9,6 +9,7 @@ import time
 import traceback
 from pathlib import Path
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -116,6 +117,38 @@ def check_update_cli(report: Path | None) -> int:
     return 0
 
 
+def update_selftest_cli(args: list[str]) -> int:
+    """`Ultrebo --update-selftest <installed folder> <staging folder>`: does what "Update now" does after the download.
+
+    The staging folder holds a ready-to-install copy in `Ultrebo/`. This starts the helper that swaps it into the
+    installed folder and reopens Ultrebo, then quits the way the real update does, so the build can prove the
+    whole hand-over works on a real Windows machine. Only used by the build."""
+    if len(args) != 2:
+        print("usage: --update-selftest <installed folder> <staging folder>")
+        return 2
+    import os
+
+    from . import selfupdate
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication(sys.argv)
+    installed, staging = Path(args[0]), Path(args[1])
+    hotkeys = HotkeyManager()
+    try:
+        hotkeys.set_bindings({"f8": lambda: None})  # the real app has keyboard hooks running when it quits
+    except Exception as e:  # noqa: BLE001
+        print(f"update-selftest: hotkeys unavailable here ({e})")
+    selfupdate.apply(selfupdate.PreparedUpdate("windows", staging / "Ultrebo", staging, installed))
+    print("update-selftest: helper started, quitting")
+
+    def finish() -> None:
+        hotkeys.stop()
+        app.quit()
+
+    QTimer.singleShot(150, finish)
+    return app.exec()
+
+
 def _log_update_check(result) -> None:
     """Keep the last automatic check in a small file, so a silent failure can be looked at afterwards."""
     try:
@@ -157,6 +190,8 @@ def main() -> int:
     if "--check-update" in sys.argv:
         rest = sys.argv[sys.argv.index("--check-update") + 1:]
         return check_update_cli(Path(rest[0]) if rest else None)
+    if "--update-selftest" in sys.argv:
+        return update_selftest_cli(sys.argv[sys.argv.index("--update-selftest") + 1:])
     if "--selftest" in sys.argv:
         rest = sys.argv[sys.argv.index("--selftest") + 1:]
         return selftest(Path(rest[0]) if rest else None)
@@ -187,6 +222,12 @@ def main() -> int:
     window, bridge = build_window(store, screen, input_backend, RapidOcrEngine(), HotkeyManager())
     _install_error_log(bridge)
     window.show()
+
+    from . import selfupdate
+
+    problem = selfupdate.last_update_problem()
+    if problem:
+        QTimer.singleShot(600, lambda: QMessageBox.warning(window, "Ultrebo", problem))
 
     if store.settings.check_updates:
         def look() -> None:
