@@ -319,3 +319,23 @@ def test_retina_scaling_is_applied(templates_dir, blank, pattern):
     assert finished(r)
     [(_, x, y)] = inp.clicks()
     assert abs(x - 230) <= 3 and abs(y - 140) <= 3  # in mouse units, not screenshot pixels
+
+
+def test_a_clicks_own_lead_in_wait_is_taken_out_of_the_pause_after_it(templates_dir):
+    """Press-to-press time should be hold + pause (as recorded), not that plus the click's settling wait."""
+    starts = []
+
+    class SlowClick(FakeInput):
+        def lead_in_s(self, kind):
+            return 0.05 if kind == "click" else 0.0
+
+        def click(self, x, y, button="left", hold_ms=60, clicks=1, nudge=False):
+            time.sleep(0.05)  # the settling wait before pressing
+            starts.append(time.monotonic())
+            time.sleep(hold_ms / 1000.0)
+
+    runner = Runner(SlowClick(), FakeScreen(lambda: None), None, templates_dir)
+    runner.start(Macro(loops=1, steps=[Step(type=StepType.CLICK, x=1, y=1, hold_ms=20, delay_after_ms=100, repeat=6)]))
+    assert wait_until(lambda: len(starts) == 6 and not runner.running, timeout=5)
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert all(0.105 <= g <= 0.14 for g in gaps), gaps  # about hold (20) + pause (100) = 120 ms, not 170

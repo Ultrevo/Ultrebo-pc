@@ -201,3 +201,21 @@ def test_junk_groups_in_a_pack_are_ignored(other, tmp_path):
     _, rules, groups = read(make_pack(tmp_path / "p.zip", manifest), other)
     assert [g.name for g in groups] == ["Real"] and groups[0].pause_s == 0
     assert [bool(r.group_id) for r in rules] == [True, False, False]
+
+
+def test_a_damaged_pack_is_a_friendly_error_not_a_crash(store, other, tmp_path):
+    import random
+
+    path = tmp_path / f"p{rulepack.EXTENSION}"
+    rulepack.export_pack(macro_with_rules(store), store.templates_dir, path)
+    original = path.read_bytes()
+    rng = random.Random(4)
+    for _ in range(150):
+        damaged = bytearray(original)
+        for _ in range(rng.randint(1, 10)):
+            damaged[rng.randrange(len(damaged))] = rng.randrange(256)
+        path.write_bytes(bytes(damaged))
+        try:
+            read(path, other)
+        except RulePackError:
+            pass  # a clear message; anything else would fail the test

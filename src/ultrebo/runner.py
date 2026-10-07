@@ -424,10 +424,13 @@ class Runner:
         self._on_status(step.title())
         times = max(step.repeat, 1)
         if not step.is_finder:
+            # A click waits a moment before it presses; that time is part of the pause, not on top of it.
+            lead_in = getattr(self.input, "lead_in_s", None)
+            lead = lead_in(step.type.value) if lead_in is not None else 0.0
             for _ in range(times):
                 if not self._act(step, None, cancel, locked):
                     return False
-                if cancel.wait(step.delay_after_ms / 1000.0):
+                if cancel.wait(max(step.delay_after_ms / 1000.0 - lead, 0.0)):
                     return False
             return False
         found = self._wait_for_target(step, cancel)

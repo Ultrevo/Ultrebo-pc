@@ -221,7 +221,7 @@ def main() -> int:
     _install_error_log(bridge)
     window.show()
 
-    problem = selfupdate.last_update_problem()
+    problem = store.load_notice or selfupdate.last_update_problem()
     if problem:
         QTimer.singleShot(600, lambda: QMessageBox.warning(window, "Ultrebo", problem))
 

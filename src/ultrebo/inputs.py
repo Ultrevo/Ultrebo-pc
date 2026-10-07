@@ -136,6 +136,15 @@ class PynputInput:
         if self._abort.wait(max(seconds, 0.0)):
             raise Aborted()
 
+    def lead_in_s(self, kind: str) -> float:
+        """How long a plain click or drag of this kind waits before it presses (so the runner can take that time
+        out of the pause that follows, and a recorded macro replays at the speed it was recorded at)."""
+        if kind == "click":
+            return 0.05 if self._real_mouse else 0.01
+        if kind == "drag":
+            return 0.02
+        return 0.0
+
     def _place(self, x: int, y: int) -> None:
         """Put the pointer at (x, y)."""
         if self._real_mouse:

@@ -58,6 +58,33 @@ class WatchAction(str, Enum):
         return "Pause, then carry on" if self is WatchAction.CONTINUE else "Restart macro from the start"
 
 
+def _coerce(value: Any, default: Any) -> Any:
+    """`value` as the same kind of thing as `default`, or `default` when it can't be (a hand-edited or damaged file
+    must never crash the app or the macro)."""
+    if isinstance(default, bool):
+        return value if isinstance(value, bool) else default
+    if isinstance(default, int):
+        if isinstance(value, bool):
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            return default
+    if isinstance(default, float):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return default
+        return number if number == number and abs(number) != float("inf") else default
+    if isinstance(default, str):
+        return value if isinstance(value, str) else default
+    return value
+
+
+def _list_of_dicts(value: Any) -> list[dict]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
 @dataclass
 class RuleGroup:
     """Rules that share a group stop being checked together: once one of them is found, the rest rest too."""
@@ -201,8 +228,20 @@ class Step:
                     value = type(default)(value)
                 except ValueError:
                     value = default
+            else:
+                value = _coerce(value, default)
             kwargs[f.name] = value
-        return cls(**kwargs)
+        step = cls(**kwargs)
+        for name in ("template_file", "group_id"):  # a text or nothing
+            if not isinstance(getattr(step, name), str):
+                setattr(step, name, None)
+        region = step.region
+        if region is not None and not (
+            isinstance(region, list) and len(region) == 4 and all(isinstance(v, int) and not isinstance(v, bool) for v in region)
+        ):
+            step.region = None  # a search area is four whole numbers
+        step.repeat = max(step.repeat, 1)
+        return step
 
 
 @dataclass
@@ -303,15 +342,15 @@ class Macro:
         except ValueError:
             mode = default.mode
         macro = cls(
-            id=data.get("id") or uuid.uuid4().hex,
-            name=data.get("name", default.name),
+            id=_coerce(data.get("id"), "") or uuid.uuid4().hex,
+            name=_coerce(data.get("name"), default.name),
             mode=mode,
-            loops=int(data.get("loops", default.loops)),
-            loop_delay_ms=int(data.get("loop_delay_ms", default.loop_delay_ms)),
-            scan_interval_ms=int(data.get("scan_interval_ms", default.scan_interval_ms)),
-            steps=[Step.from_dict(s) for s in data.get("steps", [])],
-            rules=[Step.from_dict(r) for r in data.get("rules", [])],
-            groups=[RuleGroup.from_dict(g) for g in data.get("groups", []) if isinstance(g, dict)],
+            loops=_coerce(data.get("loops"), default.loops),
+            loop_delay_ms=_coerce(data.get("loop_delay_ms"), default.loop_delay_ms),
+            scan_interval_ms=_coerce(data.get("scan_interval_ms"), default.scan_interval_ms),
+            steps=[Step.from_dict(s) for s in _list_of_dicts(data.get("steps"))],
+            rules=[Step.from_dict(r) for r in _list_of_dicts(data.get("rules"))],
+            groups=[RuleGroup.from_dict(g) for g in _list_of_dicts(data.get("groups"))],
         )
         known = {g.id for g in macro.groups}
         for rule in macro.rules:

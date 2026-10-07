@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Callable, NamedTuple
 
@@ -95,8 +96,11 @@ def _read_member(z: zipfile.ZipFile, name: str, limit: int) -> bytes:
         raise RulePackError(f"The file is missing {name}.") from e
     if info.file_size > limit:
         raise RulePackError(f"{name} is too large for a rule pack.")
-    with z.open(info) as f:
-        data = f.read(limit + 1)
+    try:
+        with z.open(info) as f:
+            data = f.read(limit + 1)
+    except OSError as e:  # a mangled entry inside the file (not a problem with the disk)
+        raise RulePackError(f"{name} in this file is damaged.") from e
     if len(data) > limit:
         raise RulePackError(f"{name} is too large for a rule pack.")
     return data
@@ -117,6 +121,18 @@ def _clean_png(data: bytes) -> bytes:
 
 
 def read_pack(
+    path: Path, save_template: Callable[[bytes], str], delete_template: Callable[[str], None]
+) -> Pack:
+    """Read a pack (see `_read_pack`). A cut-off or damaged file is reported as a RulePackError, never a crash."""
+    try:
+        return _read_pack(path, save_template, delete_template)
+    except RulePackError:
+        raise
+    except (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError, OverflowError, UnicodeError) as e:
+        raise RulePackError("This rule pack is damaged or can't be read (maybe the download was cut short). Ask for it again.") from e
+
+
+def _read_pack(
     path: Path, save_template: Callable[[bytes], str], delete_template: Callable[[str], None]
 ) -> Pack:
     """Read a pack. `save_template(png_bytes)` stores a picture and returns its file name.

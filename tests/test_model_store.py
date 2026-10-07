@@ -117,3 +117,77 @@ def test_version_comparison():
     assert is_newer("v0.1.1", "0.1.0") and is_newer("v0.10.0", "0.9.9")
     assert not is_newer("v1.0", "1.0.0") and not is_newer("v0.1.0", "0.1.1")
     assert not is_newer("latest", "0.1.0")
+
+
+# ------------------------------------------------------- a damaged file must never wipe out your macros
+
+def _store_with_three(tmp_path):
+    import json
+
+    from ultrebo.model import Macro, Step, StepType
+    from ultrebo.store import MacroStore
+
+    store = MacroStore(tmp_path)
+    for name in ("one", "two", "three"):
+        store.add(Macro(name=name, steps=[Step(type=StepType.CLICK, x=1, y=2)]))
+    return store, tmp_path / "macros.json", json.loads((tmp_path / "macros.json").read_text())
+
+
+def test_one_bad_number_in_a_macro_does_not_hide_every_macro(tmp_path):
+    import json
+
+    from ultrebo.store import MacroStore
+
+    _, path, data = _store_with_three(tmp_path)
+    data[1]["loops"] = "lots"
+    data[1]["steps"][0]["repeat"] = "many"
+    data[1]["steps"][0]["x"] = None
+    path.write_text(json.dumps(data))
+    reopened = MacroStore(tmp_path)
+    assert [m.name for m in reopened.macros] == ["one", "two", "three"]
+    step = reopened.macros[1].steps[0]
+    assert (reopened.macros[1].loops, step.repeat, step.x) == (0, 1, 0)  # sensible values instead
+    assert reopened.load_notice is None
+
+
+def test_a_cut_off_file_is_kept_aside_before_anything_new_is_saved(tmp_path):
+    from ultrebo.model import Macro
+    from ultrebo.store import MacroStore
+
+    _, path, _ = _store_with_three(tmp_path)
+    text = path.read_text()
+    path.write_text(text[: len(text) // 2])
+    reopened = MacroStore(tmp_path)
+    assert reopened.macros == [] and "couldn't read" in reopened.load_notice
+    reopened.add(Macro(name="new"))  # this overwrites macros.json ...
+    kept = list(tmp_path.glob("macros.damaged-*.json"))
+    assert len(kept) == 1 and kept[0].read_text() == text[: len(text) // 2]  # ... but the damaged copy is safe
+
+
+def test_a_macro_that_cannot_be_read_is_skipped_and_the_file_kept(tmp_path):
+    import json
+
+    from ultrebo.store import MacroStore
+
+    _, path, data = _store_with_three(tmp_path)
+    data[1] = "not a macro"
+    path.write_text(json.dumps(data))
+    reopened = MacroStore(tmp_path)
+    assert [m.name for m in reopened.macros] == ["one", "three"]
+    assert reopened.load_notice and list(tmp_path.glob("macros.damaged-*.json"))
+
+
+def test_a_missing_file_is_just_a_first_start(tmp_path):
+    from ultrebo.store import MacroStore
+
+    store = MacroStore(tmp_path)
+    assert store.macros == [] and store.load_notice is None and not list(tmp_path.glob("*.damaged-*"))
+
+
+def test_odd_values_in_a_step_become_sensible_ones():
+    from ultrebo.model import Step
+
+    step = Step.from_dict({"repeat": 0, "delay_after_ms": "soon", "enabled": "yes", "template_file": 5, "region": [1, 2, 3],
+                           "threshold": "x", "hold_ms": 2.9, "text": None, "keys": 7})
+    assert (step.repeat, step.delay_after_ms, step.enabled, step.template_file, step.region) == (1, 500, True, None, None)
+    assert (step.threshold, step.hold_ms, step.text, step.keys) == (0.8, 2, "", "")

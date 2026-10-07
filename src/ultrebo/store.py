@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -76,6 +77,8 @@ class MacroStore:
         self._listeners: list[Callable[[], None]] = []
         #: Told when a change can't be written to disk (the interface shows it). Without one the error is raised.
         self.on_save_error: Callable[[str], None] | None = None
+        #: Set when a file couldn't be read in full: says what happened and where the untouched copy was kept.
+        self.load_notice: str | None = None
         self.macros: list[Macro] = self._load_macros()
         self.settings: Settings = self._load_settings()
 
@@ -150,17 +153,45 @@ class MacroStore:
             pass
 
     # -- disk
+    def _keep_copy(self, path: Path, what: str) -> None:
+        """Set a damaged file aside untouched, so saving later can't wipe out what was in it."""
+        try:
+            kept = path.with_name(f"{path.stem}.damaged-{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}")
+            shutil.copyfile(path, kept)
+            where = f"A copy was kept as {kept.name} in {self.folder}."
+        except OSError:
+            where = "It could not be copied first."
+        note = f"Ultrebo couldn't read all of {what}, so some of it is missing. {where}"
+        self.load_notice = f"{self.load_notice}\n\n{note}" if self.load_notice else note
+
     def _load_macros(self) -> list[Macro]:
+        if not self._macros_file.exists():
+            return []
         try:
             data = json.loads(self._macros_file.read_text(encoding="utf-8"))
-            return [Macro.from_dict(m) for m in data]
-        except (OSError, ValueError, TypeError, AttributeError):
+        except (OSError, ValueError):
+            self._keep_copy(self._macros_file, "your macros")
             return []
+        if not isinstance(data, list):
+            self._keep_copy(self._macros_file, "your macros")
+            return []
+        macros, skipped = [], 0
+        for item in data:
+            try:
+                macros.append(Macro.from_dict(item))
+            except (TypeError, ValueError, AttributeError, KeyError):
+                skipped += 1  # one broken macro doesn't hide the others
+        if skipped:
+            self._keep_copy(self._macros_file, "your macros")
+        return macros
 
     def _load_settings(self) -> Settings:
+        if not self._settings_file.exists():
+            return Settings()
         try:
             return Settings.from_dict(json.loads(self._settings_file.read_text(encoding="utf-8")))
         except (OSError, ValueError, TypeError, AttributeError):
+            self._keep_copy(self._settings_file, "your settings")
             return Settings()
 
     @staticmethod
