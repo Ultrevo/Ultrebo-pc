@@ -20,6 +20,7 @@ from ..model import Macro, Step, StepType
 from .context import AppContext
 from .groups_dialog import GroupsDialog
 from .step_dialog import StepDialog
+from .tablefill import fast_fill
 
 COLUMNS = ["On", "Order", "Rule", "Group", "What it does", "Wait"]
 
@@ -114,22 +115,23 @@ class RulesTab(QWidget):
         previous = select_id or self._selected_id()
         self._loading = True
         ordered = macro.ordered_rules()
-        self.table.setRowCount(len(ordered))
-        for row, rule in enumerate(ordered):
-            on = QTableWidgetItem()
-            on.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            on.setCheckState(Qt.CheckState.Checked if rule.enabled else Qt.CheckState.Unchecked)
-            on.setData(Qt.ItemDataRole.UserRole, rule.id)
-            self.table.setItem(row, 0, on)
-            cells = (str(row + 1), rule.title(), macro.group_name(rule.group_id), rule.rule_summary(), f"{rule.delay_after_ms} ms")
-            for col, text in enumerate(cells, start=1):
-                item = QTableWidgetItem(text)
-                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                if not rule.enabled:
-                    item.setForeground(Qt.GlobalColor.gray)
-                self.table.setItem(row, col, item)
-            if previous == rule.id:
-                self.table.selectRow(row)
+        with fast_fill(self.table):
+            self.table.setRowCount(len(ordered))
+            for row, rule in enumerate(ordered):
+                on = QTableWidgetItem()
+                on.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                on.setCheckState(Qt.CheckState.Checked if rule.enabled else Qt.CheckState.Unchecked)
+                on.setData(Qt.ItemDataRole.UserRole, rule.id)
+                self.table.setItem(row, 0, on)
+                cells = (str(row + 1), rule.title(), macro.group_name(rule.group_id), rule.rule_summary(), f"{rule.delay_after_ms} ms")
+                for col, text in enumerate(cells, start=1):
+                    item = QTableWidgetItem(text)
+                    item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                    if not rule.enabled:
+                        item.setForeground(Qt.GlobalColor.gray)
+                    self.table.setItem(row, col, item)
+                if previous == rule.id:
+                    self.table.selectRow(row)
         self._loading = False
         self.hint.setText(
             "The rule at the top wins when several match at once. Use Up and Down to change the order. Double-click a rule to edit it."

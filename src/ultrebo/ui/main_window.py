@@ -25,6 +25,7 @@ from ..updater import Update
 from .context import AppContext
 from .dialogs import AboutDialog, SettingsDialog
 from .rules_tab import RulesTab
+from .tablefill import fast_fill
 from .setup_guide import SetupCard
 from .step_dialog import StepDialog
 from .update_flow import UpdateJob
@@ -373,26 +374,27 @@ class MainWindow(QMainWindow):
         ordered = macro.ordered()
         self.move_to.setRange(1, max(len(ordered), 1))
         self.table.clearSelection()
-        self.table.setRowCount(len(ordered))
-        for row, step in enumerate(ordered):
-            on = QTableWidgetItem()
-            on.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            on.setCheckState(Qt.CheckState.Checked if step.enabled else Qt.CheckState.Unchecked)
-            on.setData(Qt.ItemDataRole.UserRole, step.id)
-            self.table.setItem(row, 0, on)
-            for col, text in enumerate(
-                (str(row + 1), f"{step.title()}", step.summary(), f"{step.delay_after_ms} ms"), start=1
-            ):
-                item = QTableWidgetItem(text)
-                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                if not step.enabled:
-                    item.setForeground(Qt.GlobalColor.gray)
-                self.table.setItem(row, col, item)
-            if step.id in wanted:
-                self.table.selectionModel().select(
-                    self.table.model().index(row, 0),
-                    QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
-                )
+        with fast_fill(self.table):
+            self.table.setRowCount(len(ordered))
+            for row, step in enumerate(ordered):
+                on = QTableWidgetItem()
+                on.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                on.setCheckState(Qt.CheckState.Checked if step.enabled else Qt.CheckState.Unchecked)
+                on.setData(Qt.ItemDataRole.UserRole, step.id)
+                self.table.setItem(row, 0, on)
+                for col, text in enumerate(
+                    (str(row + 1), f"{step.title()}", step.summary(), f"{step.delay_after_ms} ms"), start=1
+                ):
+                    item = QTableWidgetItem(text)
+                    item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                    if not step.enabled:
+                        item.setForeground(Qt.GlobalColor.gray)
+                    self.table.setItem(row, col, item)
+                if step.id in wanted:
+                    self.table.selectionModel().select(
+                        self.table.model().index(row, 0),
+                        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                    )
         self._loading = False
         self._selection_changed()
         self.steps_hint.setText(

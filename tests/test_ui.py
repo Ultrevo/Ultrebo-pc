@@ -718,3 +718,55 @@ def test_editing_or_testing_with_several_selected_does_nothing(window, monkeypat
     window.edit_step()
     window.test_step()
     assert "just one" in window.status_label.text()
+
+
+# ------------------------------------------------------------------ hundreds of steps
+
+def test_a_table_of_hundreds_of_steps_fills_quickly(window):
+    """Used to take about 20 seconds for 600 steps (and again after every tick, move or delete)."""
+    import time
+
+    macro = _steps_window(window, 600)
+    start = time.perf_counter()
+    window._fill_table()
+    refill = time.perf_counter() - start
+    assert window.table.rowCount() == 600 and refill < 3.0, f"refilling 600 steps took {refill:.1f} s"
+    start = time.perf_counter()
+    _select_rows(window, 300)
+    window.move_to.setValue(1)
+    window.move_selected_to_number()
+    assert time.perf_counter() - start < 3.0
+    assert macro.ordered()[0].name == "S300"
+
+
+def test_a_rules_table_of_hundreds_of_rules_fills_quickly(window):
+    import time
+
+    window.new_macro()
+    macro = window._macro()
+    macro.rules = [Step(type=StepType.TEXT, text=f"Rule {i}", name=f"R{i}", watch=True, priority=(i + 1) * 10) for i in range(500)]
+    window.store.save()
+    start = time.perf_counter()
+    window.rules_tab.refresh()
+    assert window.rules_tab.table.rowCount() == 500 and time.perf_counter() - start < 3.0
+
+
+def test_filling_a_table_puts_the_column_sizing_and_signals_back(qapp):
+    from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
+
+    from ultrebo.ui.tablefill import fast_fill
+
+    table = QTableWidget(0, 2)
+    table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+    table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    seen = []
+    table.itemChanged.connect(seen.append)
+    with fast_fill(table):
+        table.setRowCount(3)
+        table.setItem(0, 0, QTableWidgetItem("a"))
+    assert table.horizontalHeader().sectionResizeMode(0) is QHeaderView.ResizeMode.ResizeToContents
+    assert table.horizontalHeader().sectionResizeMode(1) is QHeaderView.ResizeMode.Stretch
+    assert seen == [] and table.updatesEnabled() and not table.signalsBlocked()
+    table.setItem(1, 0, QTableWidgetItem("b"))
+    assert len(seen) == 1  # signals work again afterwards
+    table.deleteLater()
