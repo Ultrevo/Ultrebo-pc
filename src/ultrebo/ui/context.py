@@ -61,6 +61,8 @@ class AppContext:
         """
         visible = [w for w in hide if w.isVisible()]
         for w in visible:
+            if hasattr(w, "picking"):
+                w.picking = True  # a dialog waiting for an answer (see StepDialog.exec) must wait for the pick, not give up
             w.hide()
 
         def restore() -> None:
@@ -68,11 +70,18 @@ class AppContext:
                 w.show()
                 w.raise_()
 
+        def done() -> None:
+            for w in visible:
+                if hasattr(w, "picking"):
+                    w.picking = False
+                    w.pick_finished.emit()
+
         def start() -> None:
             try:
                 frame = self.screen.grab()
             except Exception:  # noqa: BLE001
                 restore()
+                done()
                 return
             overlay = PickerOverlay(frame, mode, hint)
             self._overlays.append(overlay)
@@ -81,8 +90,11 @@ class AppContext:
                 restore()
                 if overlay in self._overlays:
                     self._overlays.remove(overlay)
-                if callback:
-                    callback()
+                try:
+                    if callback:
+                        callback()
+                finally:
+                    done()
 
             overlay.box_picked.connect(
                 lambda x, y, w, h: finish(lambda: on_box and on_box(frame, x, y, w, h))

@@ -7,6 +7,7 @@ import copy
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QEventLoop, Signal
 from PySide6.QtWidgets import (
     QAbstractButton, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget,
@@ -568,6 +569,26 @@ class StepDialog(QDialog):
                 s.repeat = 1
             s.region = list(self._region) if self._region else None
         self.accept()
+
+    #: True while the dialog is hidden so the user can pick something on screen (set by AppContext.pick).
+    picking = False
+    pick_finished = Signal()
+
+    def exec(self) -> int:
+        """Like QDialog.exec, but it survives "Pick image from screen".
+
+        Hiding a dialog ends its `exec()`. The dialog came back after the pick, but the code that opened it had already
+        given up waiting, so the step the user then saved went nowhere. Here, when the wait ends only because the dialog
+        was hidden for a pick, wait for the pick to finish and show the dialog again.
+        """
+        while True:
+            result = super().exec()
+            if not self.picking:
+                return result
+            loop = QEventLoop()
+            self.pick_finished.connect(loop.quit)
+            loop.exec()
+            self.pick_finished.disconnect(loop.quit)
 
     def reject(self) -> None:
         # An image picked in this dialog but never saved should not stay on disk.

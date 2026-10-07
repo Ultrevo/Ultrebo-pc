@@ -461,3 +461,120 @@ def test_a_finder_step_remembers_the_start_over_option_but_a_rule_does_not_show_
     assert rule.restart_after.isHidden()
     for dialog in (d, again, rule):
         dialog.deleteLater()
+
+
+# ------------------------------------------------------------------ picking on screen from inside a dialog
+# Hiding a dialog ends its exec(), which used to throw away the step after "Pick image from screen" (or any other pick).
+
+class _FakePicker:
+    """Stands in for the full-screen picker: after a moment it reports a pick (or a cancel)."""
+
+    outcome = "box"
+
+    def __new__(cls, frame, mode, hint=""):
+        from PySide6.QtCore import QObject, Signal
+
+        class Picker(QObject):
+            box_picked = Signal(int, int, int, int)
+            point_picked = Signal(int, int)
+            cancelled = Signal()
+
+            def showFullScreen(self_):
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(80, lambda: {
+                    "box": lambda: self_.box_picked.emit(10, 10, 40, 30),
+                    "point": lambda: self_.point_picked.emit(25, 35),
+                    "cancel": lambda: self_.cancelled.emit(),
+                }[cls.outcome]())
+
+            def activateWindow(self_): pass
+            def raise_(self_): pass
+            def setScreen(self_, s): pass
+            def setGeometry(self_, g): pass
+
+        return Picker()
+
+
+def _run_with_user(window, monkeypatch, step, outcome, do_pick, rule=False, is_new=True):
+    """Open the real dialog, let `do_pick(dialog)` press a pick button, then press Save. Returns (dialog, result of exec)."""
+    from PySide6.QtCore import QTimer
+
+    from ultrebo.ui import context as context_module
+
+    _FakePicker.outcome = outcome
+    monkeypatch.setattr(context_module, "PickerOverlay", _FakePicker)
+    dialog = StepDialog(window.ctx, step, window, is_new=is_new, rule=rule)
+    QTimer.singleShot(50, lambda: do_pick(dialog))
+    QTimer.singleShot(900, dialog._accept)  # "the user presses Save" once the picker is gone
+    QTimer.singleShot(4000, dialog.reject)  # never hang a test run
+    return dialog, dialog.exec()
+
+
+def test_picking_an_image_and_then_saving_adds_the_step(window, monkeypatch):
+    window.new_macro()
+    from PySide6.QtCore import QTimer
+
+    from ultrebo.ui import context as context_module
+
+    _FakePicker.outcome = "box"
+    monkeypatch.setattr(context_module, "PickerOverlay", _FakePicker)
+    original_init = StepDialog.__init__
+
+    def init(self, *a, **k):
+        original_init(self, *a, **k)
+        QTimer.singleShot(50, self.pick_image.click)
+        QTimer.singleShot(900, self._accept)
+        QTimer.singleShot(4000, self.reject)
+
+    monkeypatch.setattr(StepDialog, "__init__", init)
+    window.add_step(StepType.IMAGE)
+    steps = window._macro().steps
+    assert len(steps) == 1 and steps[0].template_file and window.table.rowCount() == 1
+    assert window.store.template_path(steps[0].template_file).exists()
+
+
+def test_picking_a_position_while_editing_keeps_the_edit(window, monkeypatch):
+    window.new_macro()
+    step = Step(type=StepType.CLICK, x=1, y=2)
+    window._macro().steps.append(step)
+    window.store.save()
+    window._load_editor()
+    window._fill_table(select_id=step.id)
+    from PySide6.QtCore import QTimer
+
+    from ultrebo.ui import context as context_module
+
+    _FakePicker.outcome = "point"
+    monkeypatch.setattr(context_module, "PickerOverlay", _FakePicker)
+    original_init = StepDialog.__init__
+
+    def init(self, *a, **k):
+        original_init(self, *a, **k)
+        QTimer.singleShot(50, lambda: self._pick_point(self.c_x, self.c_y))
+        QTimer.singleShot(900, lambda: (self.name.setText("Moved"), self._accept()))
+        QTimer.singleShot(4000, self.reject)
+
+    monkeypatch.setattr(StepDialog, "__init__", init)
+    window.edit_step()
+    saved = window._macro().steps[0]
+    assert (saved.x, saved.y) == (25, 35) and saved.name == "Moved"
+    reloaded = MacroStore(window.store.folder).macros[0].steps[0]
+    assert (reloaded.x, reloaded.y, reloaded.name) == (25, 35, "Moved")
+
+
+def test_cancelling_a_pick_brings_the_dialog_back_ready_to_save(window, monkeypatch):
+    dialog, result = _run_with_user(
+        window, monkeypatch, Step(type=StepType.TEXT, text="Go"), "cancel", lambda d: d._pick_region(),
+    )
+    assert result == StepDialog.DialogCode.Accepted and dialog.isVisible() is False
+    assert dialog.picking is False
+    dialog.deleteLater()
+
+
+def test_a_dialog_that_is_not_picking_behaves_as_before(window):
+    from PySide6.QtCore import QTimer
+
+    d = StepDialog(window.ctx, Step(type=StepType.CLICK), window, is_new=True)
+    QTimer.singleShot(50, d.reject)
+    assert d.exec() == StepDialog.DialogCode.Rejected
+    d.deleteLater()
