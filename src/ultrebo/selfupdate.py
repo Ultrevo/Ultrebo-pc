@@ -151,7 +151,9 @@ def prepare(
 
 # ---------------------------------------------------------------------------------------------- helper
 
-def windows_script(pid: int, staged: Path, target: Path, staging: Path, log: Path, relaunch: str) -> str:
+def windows_script(
+    pid: int, staged: Path, target: Path, staging: Path, log: Path, relaunch: str, grace_s: int = 20
+) -> str:
     # Every line is run as it is reached (no parenthesised blocks), so the counters below really count.
     return f"""@echo off
 setlocal
@@ -165,9 +167,13 @@ set /a tries=0
 tasklist /FI "PID eq %PID%" /NH 2>nul | find "%PID%" >nul
 if errorlevel 1 goto copy
 set /a tries+=1
-if %tries% GTR 120 goto copy
+if %tries% GTR {grace_s} goto kill
 ping -n 2 127.0.0.1 >nul
 goto wait
+:kill
+echo %date% %time% Ultrebo did not close by itself, closing it>> "{log}"
+taskkill /F /PID %PID% >nul 2>&1
+ping -n 3 127.0.0.1 >nul
 :copy
 echo %date% %time% copying the new files>> "{log}"
 ping -n 2 127.0.0.1 >nul
@@ -220,6 +226,25 @@ xattr -dr com.apple.quarantine {q(str(target))} 2>/dev/null
 {relaunch}
 rm -rf {q(str(staging))}
 """
+
+
+def clean_old_leftovers(max_age_s: float = 86400.0) -> int:
+    """Delete update folders that earlier attempts left in the temp folder (each holds a whole unpacked copy)."""
+    root = Path(tempfile.gettempdir())
+    removed = 0
+    for pattern in (".ultrebo-update-*", "ultrebo-download-*"):
+        try:
+            found = list(root.glob(pattern))
+        except OSError:
+            continue
+        for folder in found:
+            try:
+                if folder.is_dir() and time.time() - folder.stat().st_mtime > max_age_s:
+                    shutil.rmtree(folder, ignore_errors=True)
+                    removed += 1
+            except OSError:
+                pass
+    return removed
 
 
 def last_update_problem(max_age_s: float = 1800.0) -> str | None:

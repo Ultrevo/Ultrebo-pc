@@ -839,7 +839,11 @@ class MainWindow(QMainWindow):
         if box.clickedButton() is page:
             webbrowser.open(update.url)
 
+    #: Set once an update has been handed to its helper: the program must then end for good, without lingering.
+    updating = False
+
     def _quit_for_update(self) -> None:
+        self.updating = True
         self.close()  # stops the macro and the hotkeys
         QTimer.singleShot(150, QApplication.quit)
 

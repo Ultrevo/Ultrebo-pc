@@ -3,6 +3,7 @@
 """Starts the application: wires the real screen, input and text reader to the window."""
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -13,7 +14,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from . import __version__, updater
+from . import __version__, selfupdate, updater
 from .hotkeys import HotkeyManager
 from .notify import Notifier
 from .ocr import RapidOcrEngine
@@ -126,10 +127,6 @@ def update_selftest_cli(args: list[str]) -> int:
     if len(args) != 2:
         print("usage: --update-selftest <installed folder> <staging folder>")
         return 2
-    import os
-
-    from . import selfupdate
-
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = QApplication(sys.argv)
     installed, staging = Path(args[0]), Path(args[1])
@@ -146,7 +143,8 @@ def update_selftest_cli(args: list[str]) -> int:
         app.quit()
 
     QTimer.singleShot(150, finish)
-    return app.exec()
+    code = app.exec()
+    os._exit(code)  # like the real update: end at once, so nothing can keep the old files in use
 
 
 def _log_update_check(result) -> None:
@@ -223,8 +221,6 @@ def main() -> int:
     _install_error_log(bridge)
     window.show()
 
-    from . import selfupdate
-
     problem = selfupdate.last_update_problem()
     if problem:
         QTimer.singleShot(600, lambda: QMessageBox.warning(window, "Ultrebo", problem))
@@ -238,4 +234,11 @@ def main() -> int:
 
         threading.Thread(target=look, daemon=True, name="ultrebo-update-check").start()
 
-    return app.exec()
+    threading.Thread(target=selfupdate.clean_old_leftovers, daemon=True, name="ultrebo-clean-temp").start()
+
+    code = app.exec()
+    if window.updating:
+        # The update helper is waiting for this program to end so it can replace its files. Ending the usual way
+        # can hang on a background library, so end right now (everything is already saved).
+        os._exit(code)
+    return code

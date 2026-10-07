@@ -230,6 +230,35 @@ def test_windows_helper_copies_the_new_files_over_and_reopens(tmp_path):
     assert not staging.exists()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the Windows helper is a batch file")
+def test_windows_helper_closes_an_ultrebo_that_will_not_close_and_still_installs(tmp_path):
+    target, staging, staged = build_tree(tmp_path, "Ultrebo")
+    marker, log = tmp_path / "relaunched.txt", tmp_path / "log.txt"
+    stuck = subprocess.Popen(["ping", "-n", "120", "127.0.0.1"], stdout=subprocess.DEVNULL)  # never ends by itself
+    try:
+        script = tmp_path / "update.bat"
+        script.write_text(selfupdate.windows_script(stuck.pid, staged, target, staging, log, f'echo done > "{marker}"', grace_s=2))
+        subprocess.run(["cmd", "/c", str(script)], check=True, timeout=60)
+        assert wait_for(marker)
+        assert stuck.poll() is not None  # it was closed
+        assert (target / "added.txt").exists()
+        assert "did not close by itself" in log.read_text()
+    finally:
+        stuck.kill()
+
+
+def test_leftover_update_folders_are_cleaned_up_but_fresh_ones_are_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(selfupdate.tempfile, "gettempdir", lambda: str(tmp_path))
+    old, fresh, other = tmp_path / ".ultrebo-update-abc", tmp_path / ".ultrebo-update-new", tmp_path / "somebody-elses"
+    for folder in (old, fresh, other):
+        (folder / "inner").mkdir(parents=True)
+    past = time.time() - 3 * 86400
+    os.utime(old, (past, past))
+    os.utime(other, (past, past))
+    assert selfupdate.clean_old_leftovers() == 1
+    assert not old.exists() and fresh.exists() and other.exists()  # only our own, only the old ones
+
+
 # ------------------------------------------------------------------ the update check explains itself
 
 import email.message
