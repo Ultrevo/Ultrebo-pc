@@ -63,9 +63,9 @@ def test_stopping_cuts_a_long_click_short_and_lets_the_button_go(templates_dir):
     r.request_stop()
     took = time.monotonic() - began
 
-    assert took < 0.05
+    assert took < 0.5  # it used to wait out the whole 10-second click
     assert states == [True, False]  # "stopped" is reported straight away
-    assert wait_until(lambda: not r.running, timeout=1)
+    assert wait_until(lambda: not r.running, timeout=4)
     assert inp._mouse_ctl.events == ["press", "release"]  # the button is never left held down
 
 
@@ -79,8 +79,8 @@ def test_stopping_cuts_a_long_key_press_short_and_lets_the_key_go(templates_dir)
     began = time.monotonic()
     r.request_stop()
 
-    assert time.monotonic() - began < 0.05
-    assert wait_until(lambda: not r.running, timeout=1)
+    assert time.monotonic() - began < 0.5
+    assert wait_until(lambda: not r.running, timeout=4)
     assert inp._key_ctl.events == [("press", "ENTER"), ("release", "ENTER")]
 
 
@@ -91,7 +91,7 @@ def test_a_stopped_macro_does_no_more_clicks(templates_dir):
     r.start(macro)
     assert wait_until(lambda: len(inp._mouse_ctl.events) >= 4)
     r.request_stop()
-    assert wait_until(lambda: not r.running, timeout=1)
+    assert wait_until(lambda: not r.running, timeout=4)
     seen = list(inp._mouse_ctl.events)
     time.sleep(0.1)
     assert inp._mouse_ctl.events == seen

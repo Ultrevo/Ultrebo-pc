@@ -321,22 +321,27 @@ def test_retina_scaling_is_applied(templates_dir, blank, pattern):
     assert abs(x - 230) <= 3 and abs(y - 140) <= 3  # in mouse units, not screenshot pixels
 
 
-def test_a_clicks_own_lead_in_wait_is_taken_out_of_the_pause_after_it(templates_dir):
-    """Press-to-press time should be hold + pause (as recorded), not that plus the click's settling wait."""
-    starts = []
+def test_a_clicks_own_lead_in_wait_is_taken_out_of_the_pause_after_it(templates_dir, monkeypatch):
+    """Press-to-press time should be hold + pause (as recorded), not that plus the click's settling wait.
 
-    class SlowClick(FakeInput):
+    Checked on the waits the runner asks for, not on a clock, so a slow or busy computer can't make it fail."""
+    from ultrebo import runner as runner_module
+
+    asked = []
+    monkeypatch.setattr(runner_module.Cancel, "wait", lambda self, seconds: asked.append(round(seconds, 4)) or False)
+
+    class Settling(FakeInput):
         def lead_in_s(self, kind):
             return 0.05 if kind == "click" else 0.0
 
-        def click(self, x, y, button="left", hold_ms=60, clicks=1, nudge=False):
-            time.sleep(0.05)  # the settling wait before pressing
-            starts.append(time.monotonic())
-            time.sleep(hold_ms / 1000.0)
+    for backend, expected in ((Settling(), 0.05), (FakeInput(), 0.1)):  # an input with no lead-in is left alone
+        asked.clear()
+        runner = Runner(backend, FakeScreen(lambda: None), None, templates_dir)
+        runner._run_step(Step(type=StepType.CLICK, x=1, y=1, hold_ms=20, delay_after_ms=100, repeat=3), runner_module.Cancel())
+        assert asked == [expected] * 3, asked
 
-    runner = Runner(SlowClick(), FakeScreen(lambda: None), None, templates_dir)
-    runner.start(Macro(loops=1, steps=[Step(type=StepType.CLICK, x=1, y=1, hold_ms=20, delay_after_ms=100, repeat=6)]))
-    assert wait_until(lambda: len(starts) == 6 and not runner.running, timeout=5)
-    gaps = [b - a for a, b in zip(starts, starts[1:])]
-    # about hold (20) + pause (100) = 120 ms, not 170 (the clock on Windows and Mac is coarse, so allow some slack)
-    assert sorted(gaps)[len(gaps) // 2] <= 0.145 and all(0.1 <= g < 0.16 for g in gaps), gaps
+    asked.clear()  # keys have no lead-in, and a pause shorter than the lead-in becomes none, never negative
+    runner = Runner(Settling(), FakeScreen(lambda: None), None, templates_dir)
+    runner._run_step(Step(type=StepType.KEY, keys="a", delay_after_ms=100), runner_module.Cancel())
+    runner._run_step(Step(type=StepType.CLICK, x=1, y=1, delay_after_ms=30), runner_module.Cancel())
+    assert asked == [0.1, 0.0]
