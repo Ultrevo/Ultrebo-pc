@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Ultrevo. See LICENSE and NOTICE.
 import threading
+import types
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -65,12 +66,12 @@ def test_a_nudged_click_glides_in_and_wiggles_before_it_clicks():
     mouse = FakeMouse(start=(900, 700))
     real_input(mouse).click(200, 150, hold_ms=1, nudge=True)
     moves = mouse.moves[1:]
-    assert len(moves) >= inputs.GLIDE_STEPS + len(inputs.WIGGLE)  # many small moves, not one jump
-    assert moves[inputs.GLIDE_STEPS - 1] == (200, 150)  # the glide arrives on the target
-    assert any(m != (200, 150) for m in moves[inputs.GLIDE_STEPS:-1])  # then it wiggles around it
-    assert moves[-1] == (200, 150)  # and ends exactly on it
-    xs = [m[0] for m in moves[:inputs.GLIDE_STEPS]]
+    arrived = moves.index((200, 150))
+    assert arrived >= 3  # many small moves, not one jump
+    xs = [m[0] for m in moves[:arrived + 1]]
     assert xs == sorted(xs, reverse=True)  # coming from the right, in order
+    assert any(m != (200, 150) for m in moves[arrived + 1:-1])  # then it wiggles around it
+    assert moves[-1] == (200, 150)  # and ends exactly on it
     assert [e[0] for e in mouse.events] == ["press", "release"] and all(e[1] == (200, 150) for e in mouse.events)
 
 
@@ -78,7 +79,8 @@ def test_the_wiggle_is_tiny():
     """It never strays more than 3 pixels from the target, and no single move of it is longer than 3 pixels."""
     mouse = FakeMouse(start=(900, 700))
     real_input(mouse).click(200, 150, hold_ms=1, nudge=True)
-    wiggle = mouse.moves[1 + inputs.GLIDE_STEPS - 1:]  # from arriving on the target
+    moves = mouse.moves[1:]
+    wiggle = moves[moves.index((200, 150)):]  # from arriving on the target
     assert all(abs(x - 200) ** 2 + abs(y - 150) ** 2 <= inputs.WIGGLE_MAX_PX ** 2 for x, y in wiggle)
     assert all(
         (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 <= inputs.WIGGLE_MAX_PX ** 2 for a, b in zip(wiggle, wiggle[1:])
@@ -86,10 +88,76 @@ def test_the_wiggle_is_tiny():
     assert inputs.PUSH[0] ** 2 + inputs.PUSH[1] ** 2 <= inputs.WIGGLE_MAX_PX ** 2
 
 
-def test_a_plain_click_still_just_places_the_cursor():
-    mouse = FakeMouse()
-    real_input(mouse).click(200, 150, hold_ms=1)
+# ------------------------------------------------------------------------ the cursor travels, it doesn't teleport
+
+def test_a_plain_click_moves_the_cursor_there_over_the_move_time_instead_of_teleporting():
+    mouse = FakeMouse(start=(900, 700))
+    backend = real_input(mouse)
+    assert backend._move_ms == inputs.DEFAULT_MOVE_MS == 50
+    began = time.perf_counter()
+    backend.click(200, 150, hold_ms=1)
+    took = time.perf_counter() - began
+    moves = mouse.moves[1:]
+    assert len(moves) >= 3 and moves[-1] == (200, 150)  # a path, ending exactly on the spot
+    xs, ys = [m[0] for m in moves], [m[1] for m in moves]
+    assert xs == sorted(xs, reverse=True) and ys == sorted(ys, reverse=True)  # straight there, never backwards
+    assert took >= 0.045  # it really took about the move time
+    assert [e[0] for e in mouse.events] == ["press", "release"] and all(e[1] == (200, 150) for e in mouse.events)
+
+
+def test_a_move_time_of_zero_jumps_straight_there():
+    mouse = FakeMouse(start=(900, 700))
+    backend = real_input(mouse)
+    backend.set_move_ms(0)
+    backend.click(200, 150, hold_ms=1)
     assert mouse.moves[1:] == [(200, 150)]
+
+
+def test_the_move_time_is_what_the_macro_asks_for():
+    mouse = FakeMouse(start=(900, 700))
+    backend = real_input(mouse)
+    backend.set_move_ms(300)
+    began = time.perf_counter()
+    backend.click(200, 150, hold_ms=1)
+    assert time.perf_counter() - began >= 0.29 and len(mouse.moves) > 10
+    backend.set_move_ms(-5)
+    assert backend._move_ms == 0
+    backend.set_move_ms(10**9)
+    assert backend._move_ms == inputs.MAX_MOVE_MS
+
+
+def test_a_click_where_the_cursor_already_is_does_not_wait_to_move():
+    mouse = FakeMouse(start=(200, 150))
+    backend = real_input(mouse)
+    backend.set_move_ms(500)
+    began = time.perf_counter()
+    backend.click(200, 150, hold_ms=1)
+    assert time.perf_counter() - began < 0.2 and backend.last_lead_s < 0.2
+
+
+def test_dragging_and_scrolling_also_travel_to_where_they_start():
+    mouse = FakeMouse(start=(900, 700))
+    mouse.scroll = lambda dx, dy: None
+    backend = real_input(mouse)
+    backend.drag(200, 150, 300, 250, duration_ms=30)
+    first_leg = mouse.moves[1:]
+    assert first_leg.index((200, 150)) >= 3  # it glided to the start of the drag before pressing
+    assert mouse.events[0] == ("press", (200, 150))
+    mouse.moves[:] = [(900, 700)]
+    backend.scroll(0, -3, 400, 300)
+    assert len(mouse.moves) > 3 and mouse.moves[-1] == (400, 300)
+
+
+def test_the_time_spent_getting_there_is_reported_so_the_pause_can_make_room_for_it():
+    mouse = FakeMouse(start=(900, 700))
+    backend = real_input(mouse)
+    backend.click(200, 150, hold_ms=1)
+    assert 0.045 <= backend.last_lead_s < 0.5
+    backend._real_keys = False
+    backend._key_ctl = types.SimpleNamespace(press=lambda k: None, release=lambda k: None)
+    backend._keyboard = types.SimpleNamespace(Key=types.SimpleNamespace())
+    backend.press_keys("a", 1)
+    assert backend.last_lead_s == 0.0
 
 
 # -------------------------------------------------------------------------------- rules and groups

@@ -254,6 +254,8 @@ class Macro:
     loop_delay_ms: int = 1000
     #: How often image/text steps look at the screen.
     scan_interval_ms: int = 1000
+    #: How long the cursor takes to travel to each click, drag or scroll position (0 = jump straight there).
+    move_ms: int = 50
     steps: list[Step] = field(default_factory=list)
     #: Always-watching detections. They run in the background for the whole run; when several are on
     #: screen at once the one with the lowest priority number is handled first.
@@ -329,6 +331,7 @@ class Macro:
             "loops": self.loops,
             "loop_delay_ms": self.loop_delay_ms,
             "scan_interval_ms": self.scan_interval_ms,
+            "move_ms": self.move_ms,
             "steps": [s.to_dict() for s in self.steps],
             "rules": [r.to_dict() for r in self.rules],
             "groups": [g.to_dict() for g in self.groups],
@@ -348,6 +351,7 @@ class Macro:
             loops=_coerce(data.get("loops"), default.loops),
             loop_delay_ms=_coerce(data.get("loop_delay_ms"), default.loop_delay_ms),
             scan_interval_ms=_coerce(data.get("scan_interval_ms"), default.scan_interval_ms),
+            move_ms=min(max(_coerce(data.get("move_ms"), default.move_ms), 0), 5000),
             steps=[Step.from_dict(s) for s in _list_of_dicts(data.get("steps"))],
             rules=[Step.from_dict(r) for r in _list_of_dicts(data.get("rules"))],
             groups=[RuleGroup.from_dict(g) for g in _list_of_dicts(data.get("groups"))],

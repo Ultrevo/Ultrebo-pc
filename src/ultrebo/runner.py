@@ -269,6 +269,9 @@ class Runner:
             return error
         self.stop()
         self._macro_name = macro.name
+        set_move = getattr(self.input, "set_move_ms", None)
+        if set_move is not None:
+            set_move(macro.move_ms)
         self._scan_s = max(macro.scan_interval_ms / 1000.0, MIN_SCAN_S)
         stop = Cancel()
         self._stop = stop
@@ -424,12 +427,12 @@ class Runner:
         self._on_status(step.title())
         times = max(step.repeat, 1)
         if not step.is_finder:
-            # A click waits a moment before it presses; that time is part of the pause, not on top of it.
-            lead_in = getattr(self.input, "lead_in_s", None)
-            lead = lead_in(step.type.value) if lead_in is not None else 0.0
             for _ in range(times):
                 if not self._act(step, None, cancel, locked):
                     return False
+                # Getting the cursor there (and the short settle before a press) took time that was part of the
+                # pause when the macro was recorded, so it comes out of the pause, not on top of it.
+                lead = getattr(self.input, "last_lead_s", 0.0)
                 if cancel.wait(max(step.delay_after_ms / 1000.0 - lead, 0.0)):
                     return False
             return False

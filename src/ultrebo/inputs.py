@@ -3,6 +3,7 @@
 """Sends mouse and keyboard input. The runner only talks to the InputBackend interface."""
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Protocol
@@ -85,7 +86,9 @@ class Aborted(Exception):
     """Raised inside an input action when the macro is stopped partway through it."""
 
 
-GLIDE_STEPS = 8
+#: How long the cursor takes to travel to a click position unless the macro says otherwise.
+DEFAULT_MOVE_MS = 50
+MAX_MOVE_MS = 5000
 #: The wiggle before a nudged click is tiny: it never goes further than this many pixels from the target, and no
 #: single move of it is longer than this either.
 WIGGLE_MAX_PX = 3
@@ -110,6 +113,9 @@ class InputBackend(Protocol):
 class PynputInput:
     """Real input via pynput (Windows, macOS and Linux/X11)."""
 
+    _move_ms = DEFAULT_MOVE_MS
+    last_lead_s = 0.0
+
     def __init__(self) -> None:
         from pynput import keyboard, mouse
 
@@ -123,6 +129,13 @@ class PynputInput:
         self._real_keys = winkeys.available()
         #: Set when the macro is stopped: any click, drag or key press in progress ends right away.
         self._abort = threading.Event()
+        self._move_ms = DEFAULT_MOVE_MS
+        #: How long the last click, drag or scroll spent getting the cursor there and settling, before it pressed.
+        self.last_lead_s = 0.0
+
+    def set_move_ms(self, ms: int) -> None:
+        """How long the cursor takes to travel to each position (0 = jump straight there)."""
+        self._move_ms = min(max(int(ms), 0), MAX_MOVE_MS)
 
     def abort(self) -> None:
         """Cut short whatever is being pressed or moved. Buttons and keys already down are still let go."""
@@ -136,15 +149,6 @@ class PynputInput:
         if self._abort.wait(max(seconds, 0.0)):
             raise Aborted()
 
-    def lead_in_s(self, kind: str) -> float:
-        """How long a plain click or drag of this kind waits before it presses (so the runner can take that time
-        out of the pause that follows, and a recorded macro replays at the speed it was recorded at)."""
-        if kind == "click":
-            return 0.05 if self._real_mouse else 0.01
-        if kind == "drag":
-            return 0.02
-        return 0.0
-
     def _place(self, x: int, y: int) -> None:
         """Put the pointer at (x, y)."""
         if self._real_mouse:
@@ -154,6 +158,28 @@ class PynputInput:
             except Exception:  # noqa: BLE001 - fall back to the plain way rather than failing the macro
                 self._real_mouse = False
         self._mouse_ctl.position = (x, y)
+
+    def _glide_to(self, x: int, y: int) -> None:
+        """Move the cursor to (x, y) over the macro's move time, instead of teleporting there.
+
+        The path is worked out from the clock, not from a fixed number of steps, so it takes the time asked for
+        however coarse the computer's timer is, and always ends exactly on (x, y)."""
+        try:
+            sx, sy = self._mouse_ctl.position
+        except Exception:  # noqa: BLE001
+            sx, sy = x, y
+        total = self._move_ms / 1000.0
+        if total <= 0 or math.hypot(x - sx, y - sy) < 2:
+            self._place(x, y)
+            return
+        began = time.perf_counter()
+        while True:
+            t = (time.perf_counter() - began) / total
+            if t >= 1.0:
+                break
+            self._place(round(sx + (x - sx) * t), round(sy + (y - sy) * t))
+            self._nap(0.004)
+        self._place(x, y)
 
     def _button(self, name: str):
         return {
@@ -168,15 +194,7 @@ class PynputInput:
         Some games (Roblox, for one) only notice the mouse when they see it move, not when the cursor is
         placed straight on a spot, so a click right after a teleport can land on nothing.
         """
-        ctl = self._mouse_ctl
-        try:
-            sx, sy = ctl.position
-        except Exception:  # noqa: BLE001
-            sx, sy = x, y
-        for i in range(1, GLIDE_STEPS + 1):
-            t = i / GLIDE_STEPS
-            self._place(round(sx + (x - sx) * t), round(sy + (y - sy) * t))
-            self._nap(0.008)
+        self._glide_to(x, y)
         for dx, dy in WIGGLE:
             self._place(x + dx, y + dy)
             self._nap(0.012)
@@ -198,11 +216,14 @@ class PynputInput:
     def click(
         self, x: int, y: int, button: str = "left", hold_ms: int = 60, clicks: int = 1, nudge: bool = False
     ) -> None:
+        began = time.perf_counter()
+        self.last_lead_s = 0.0
         if nudge:
             self._approach(x, y)
         else:
-            self._place(x, y)
+            self._glide_to(x, y)
             self._nap(0.05 if self._real_mouse else 0.01)
+        self.last_lead_s = time.perf_counter() - began
         b = self._button(button)
         for i in range(max(1, clicks)):
             self._mouse_ctl.press(b)
@@ -215,8 +236,11 @@ class PynputInput:
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, button: str = "left", duration_ms: int = 300) -> None:
         b = self._button(button)
-        self._place(x1, y1)
+        began = time.perf_counter()
+        self.last_lead_s = 0.0
+        self._glide_to(x1, y1)
         self._nap(0.02)
+        self.last_lead_s = time.perf_counter() - began
         self._mouse_ctl.press(b)
         try:
             steps = max(2, int(duration_ms / 15))
@@ -228,9 +252,12 @@ class PynputInput:
             self._mouse_ctl.release(b)
 
     def scroll(self, dx: int, dy: int, x: int | None = None, y: int | None = None) -> None:
+        began = time.perf_counter()
+        self.last_lead_s = 0.0
         if x is not None and y is not None:
-            self._place(x, y)
+            self._glide_to(x, y)
             self._nap(0.01)
+        self.last_lead_s = time.perf_counter() - began
         self._mouse_ctl.scroll(dx, dy)
 
     def _to_key(self, name: str):
@@ -268,6 +295,7 @@ class PynputInput:
                     pass
 
     def press_keys(self, spec: str, hold_ms: int = 60) -> None:
+        self.last_lead_s = 0.0
         mods, key = parse_key_spec(spec)
         if self._real_keys:
             try:

@@ -813,3 +813,13 @@ def test_the_notice_does_not_take_the_keyboard_focus(qapp):
     assert toast.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
     toast.hide()
     toast.deleteLater()
+
+
+def test_the_macro_settings_have_a_cursor_move_time_that_is_saved(window):
+    window.new_macro()
+    assert window.s_move.value() == 50  # the default
+    window.s_move.setValue(120)
+    assert window._macro().move_ms == 120
+    assert MacroStore(window.store.folder).macros[0].move_ms == 120
+    window.new_macro()
+    assert window.s_move.value() == 50  # another macro keeps its own

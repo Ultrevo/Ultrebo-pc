@@ -68,6 +68,8 @@ Not packaged yet. It can run from source on X11 (see [MAINTAINING.md](MAINTAININ
 
 If you press the same key over and over quickly (mashing a key, for example), the recording joins them into **one step with a repeat count** (such as `Press e x100`), using the typical press length and the typical pause between presses. Change the repeat in the step's settings.
 
+The cursor **glides** to each click position instead of jumping there. How long the trip takes is set per macro in the macro's settings (**Cursor move time**, 50 ms by default; 0 jumps straight there).
+
 Tips: play in **windowed mode**, and don't move or resize the game window between recording and running,
 because clicks are recorded as screen positions.
 

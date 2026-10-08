@@ -80,7 +80,14 @@ def test_a_plain_click_on_windows_is_also_placed_with_real_input(monkeypatch):
     log = []
     backend = make_backend(True, monkeypatch, log)
     backend.click(10, 20)
-    assert log == [("to", 10, 20)] and backend._mouse_ctl.events[0] == ("press", (10, 20))
+    moves = [e for e in log if e[0] == "to"]
+    assert len(moves) >= 3 and moves[-1] == ("to", 10, 20)  # it travels there with real input, ending exactly on the spot
+    assert backend._mouse_ctl.events[0] == ("press", (10, 20))
+    log.clear()
+    backend.set_move_ms(0)
+    backend._mouse_ctl.position = (500, 500)
+    backend.click(10, 20)
+    assert log == [("to", 10, 20)]  # a move time of 0 jumps straight there
 
 
 def test_other_systems_keep_the_plain_way(monkeypatch):

@@ -248,7 +248,11 @@ class MainWindow(QMainWindow):
         self.s_scan.setRange(100, 3_600_000)
         self.s_scan.setSuffix(" ms")
         self.s_scan.valueChanged.connect(self._settings_edited)
-        for box in (self.s_loops, self.s_pause, self.s_scan):
+        self.s_move = QSpinBox()
+        self.s_move.setRange(0, 5000)
+        self.s_move.setSuffix(" ms")
+        self.s_move.valueChanged.connect(self._settings_edited)
+        for box in (self.s_loops, self.s_pause, self.s_scan, self.s_move):
             box.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         form.addRow("Macro name", self.s_name)
         form.addRow("How it runs", self.s_mode)
@@ -258,6 +262,14 @@ class MainWindow(QMainWindow):
         form.addRow("", self.s_mode_help)
         form.addRow("Loops (0 = forever)", self.s_loops)
         form.addRow("Pause between loops", self.s_pause)
+        form.addRow("Cursor move time", self.s_move)
+        move_hint = QLabel(
+            "How long the cursor takes to travel from one click position to the next, instead of jumping there. "
+            "50 is a quick, smooth glide; 0 jumps straight to the spot."
+        )
+        move_hint.setWordWrap(True)
+        move_hint.setProperty("muted", True)
+        form.addRow("", move_hint)
         form.addRow("Look at the screen every", self.s_scan)
         hint = QLabel(
             "How often image and text steps and rules check the screen. Higher is easier on the computer "
@@ -364,6 +376,7 @@ class MainWindow(QMainWindow):
         self.s_loops.setValue(macro.loops)
         self.s_pause.setValue(macro.loop_delay_ms)
         self.s_scan.setValue(macro.scan_interval_ms)
+        self.s_move.setValue(macro.move_ms)
         self._loading = False
         self._fill_table()
         self.rules_tab.refresh()
@@ -476,6 +489,7 @@ class MainWindow(QMainWindow):
         macro.loops = self.s_loops.value()
         macro.loop_delay_ms = self.s_pause.value()
         macro.scan_interval_ms = self.s_scan.value()
+        macro.move_ms = self.s_move.value()
         self.s_mode_help.setText(macro.mode.help)
         self.editor_title.setText(macro.name)
         self.store.save()

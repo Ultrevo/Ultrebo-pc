@@ -191,3 +191,24 @@ def test_odd_values_in_a_step_become_sensible_ones():
                            "threshold": "x", "hold_ms": 2.9, "text": None, "keys": 7})
     assert (step.repeat, step.delay_after_ms, step.enabled, step.template_file, step.region) == (1, 500, True, None, None)
     assert (step.threshold, step.hold_ms, step.text, step.keys) == (0.8, 2, "", "")
+
+
+def test_the_cursor_move_time_defaults_to_50_and_is_kept_per_macro(tmp_path):
+    from ultrebo.model import Macro
+    from ultrebo.store import MacroStore
+
+    assert Macro().move_ms == 50
+    assert Macro.from_dict({"name": "old macro made before this setting"}).move_ms == 50
+    store = MacroStore(tmp_path)
+    store.add(Macro(name="slow", move_ms=250))
+    store.add(Macro(name="instant", move_ms=0))
+    reopened = MacroStore(tmp_path)
+    assert [m.move_ms for m in reopened.macros] == [250, 0]
+
+
+def test_a_silly_move_time_is_kept_in_range():
+    from ultrebo.model import Macro
+
+    assert Macro.from_dict({"move_ms": -40}).move_ms == 0
+    assert Macro.from_dict({"move_ms": 10**9}).move_ms == 5000
+    assert Macro.from_dict({"move_ms": "fast"}).move_ms == 50
